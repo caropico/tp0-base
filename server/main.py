@@ -38,7 +38,7 @@ def initialize_config():
 
     return config_params
 
-def signal_handler():
+def signal_handler(sig, frame):
     logging.info('action: graceful_shutdown | signal: SIGTERM')
     if server:
         server.shutdown()
