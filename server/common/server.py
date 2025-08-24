@@ -2,12 +2,14 @@ import socket
 import logging
 
 
+
 class Server:
     def __init__(self, port, listen_backlog):
         # Initialize server socket
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
+        self._is_running = False
 
     def run(self):
         """
@@ -20,9 +22,13 @@ class Server:
 
         # TODO: Modify this program to handle signal to graceful shutdown
         # the server
-        while True:
-            client_sock = self.__accept_new_connection()
-            self.__handle_client_connection(client_sock)
+        self._is_running = True
+        try: 
+            while self._is_running:
+                client_sock = self.__accept_new_connection()
+                self.__handle_client_connection(client_sock)
+        except OSError:
+            logging.info('action: server_loop_interrupted | result: success')
 
     def __handle_client_connection(self, client_sock):
         """
@@ -56,3 +62,10 @@ class Server:
         c, addr = self._server_socket.accept()
         logging.info(f'action: accept_connections | result: success | ip: {addr[0]}')
         return c
+    
+    
+    def shutdown(self):
+        self._is_running = False
+        if self._server_socket:
+            self._server_socket.close()
+        logging.info('action: close_server_socket | result: success')
