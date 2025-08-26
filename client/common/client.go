@@ -96,10 +96,10 @@ func (c *Client) StartClientLoop(signals chan os.Signal) {
 		}
 
 		if ack == 1{
-			log.Infof("action: apuesta_enviada | result: success | dni: %d | numero: %d", 
+			log.Infof("action: apuesta_enviada | result: success | dni: ${%d} | numero: ${%d}", 
     			c.bet.DNI, c.bet.BetNumber)
 		} else {
-			log.Infof("action: apuesta_enviada | result: fail | dni: %d | numero: %d", 
+			log.Infof("action: apuesta_enviada | result: fail | dni: ${%d} | numero: ${%d}", 
     			c.bet.DNI, c.bet.BetNumber)
 		}
 
