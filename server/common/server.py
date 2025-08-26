@@ -53,7 +53,7 @@ class Server:
             
     def __parse__message_to_bet(self, msg: str):
         try:
-            fields = msg.split("|")
+            fields = msg.split(";")
             if len(fields) != 6: 
                 raise ValueError("Incorrect number of fields in the message")
             bet = utils.Bet(fields[0], fields[1], fields[2], fields[3], fields[4], fields[5])

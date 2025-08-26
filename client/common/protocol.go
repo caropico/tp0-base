@@ -17,7 +17,7 @@ type Bet struct {
 
 
 func SendBetMessage(conn net.Conn, bet ClientBet, agencyId string) error {
-    message := fmt.Sprintf("%s|%s|%s|%d|%s|%d", 
+    message := fmt.Sprintf("%s;%s;%s;%d;%s;%d", 
         agencyId, bet.FirstName, bet.LastName, 
         bet.DNI, bet.Birthday, bet.BetNumber)
 
