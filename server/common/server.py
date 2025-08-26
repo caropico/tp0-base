@@ -1,6 +1,9 @@
 import socket
 import logging
 
+from common import protocol
+from common import utils
+
 
 
 class Server:
@@ -29,6 +32,7 @@ class Server:
                 self.__handle_client_connection(client_sock)
         except OSError:
             logging.info('action: server_loop_interrupted | result: success')
+            
 
     def __handle_client_connection(self, client_sock):
         """
@@ -38,16 +42,25 @@ class Server:
         client socket will also be closed
         """
         try:
-            # TODO: Modify the receive to avoid short-reads
-            msg = client_sock.recv(1024).rstrip().decode('utf-8')
+            msg = protocol.receive_bet_message(client_sock)
             addr = client_sock.getpeername()
             logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')
-            # TODO: Modify the send to avoid short-writes
-            client_sock.send("{}\n".format(msg).encode('utf-8'))
+            self.__parse__message_to_bet(msg)
         except OSError as e:
             logging.error("action: receive_message | result: fail | error: {e}")
         finally:
             client_sock.close()
+            
+    def __parse__message_to_bet(self, msg: str):
+        try:
+            fields = msg.split("|")
+            if len(fields) != 6: 
+                raise ValueError("Incorrect number of fields in the message")
+            bet = utils.Bet(fields[0], fields[1], fields[2], fields[3], fields[4], fields[5])
+            utils.store_bets([bet])
+            logging.info(f"action: apuesta_almacenada | result: success | dni: ${bet.document} | numero: ${bet.number}")
+        except Exception as e:
+            logging.error(f"action: apuesta_almacenada | result: fail | error: {e} | msg: {msg}")
 
     def __accept_new_connection(self):
         """
