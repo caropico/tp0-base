@@ -25,3 +25,16 @@ def receive_bet_message(client_sock):
         
     except Exception as e:
         raise Exception(f"Error receiving message: {e}")
+    
+def send_ack_message(client_sock):
+    try:
+        ack_byte = b'\x01'
+        total_bytes_sent = 0
+        while total_bytes_sent < 1:
+            bytes_sent = client_sock.send(ack_byte[total_bytes_sent:])
+            if bytes_sent == 0:
+                raise ConnectionError("Connection closed while sending ACK")
+            total_bytes_sent += bytes_sent
+    except Exception as e:
+        raise Exception(f"Error sending ACK: {e}")
+    

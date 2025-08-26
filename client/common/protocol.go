@@ -40,3 +40,17 @@ func SendBetMessage(conn net.Conn, bet ClientBet, agencyId string) error {
     }
     return nil
 }
+
+func ReceiveAckMessage(conn net.Conn) (byte,error) {
+    ack := make([]byte,1)
+    totalRead := 0
+    for totalRead < 1 {
+        n, err := conn.Read(ack[totalRead:])
+        if err != nil {
+            return 0,err
+        }
+        totalRead += n
+    }
+
+    return ack[0],nil
+}

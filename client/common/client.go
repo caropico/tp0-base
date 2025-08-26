@@ -78,15 +78,34 @@ func (c *Client) StartClientLoop(signals chan os.Signal) {
 		c.createClientSocket()
 
 		err := SendBetMessage(c.conn, c.bet, c.config.ID)
-		c.conn.Close()
-
 		if err != nil {
-			log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
+			log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
 				c.config.ID,
 				err,
 			)
 			return
 		}
+
+		ack, err := ReceiveAckMessage(c.conn)
+		if err != nil {
+			log.Errorf("action: receive_ack | result: fail | client_id: %v | error: %v",
+				c.config.ID,
+				err,
+			)
+			return
+		}
+
+		if ack == 1{
+			log.Infof("action: apuesta_enviada | result: success | dni: %d | numero: %d", 
+    			c.bet.DNI, c.bet.BetNumber)
+		} else {
+			log.Infof("action: apuesta_enviada | result: fail | dni: %d | numero: %d", 
+    			c.bet.DNI, c.bet.BetNumber)
+		}
+
+		c.conn.Close()
+
+		
 		
 		/*log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
 			c.config.ID,

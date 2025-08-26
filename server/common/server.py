@@ -4,6 +4,7 @@ import logging
 from common import protocol
 from common import utils
 
+MAX_MESSAGE_FIELDS = 6
 
 
 class Server:
@@ -49,12 +50,16 @@ class Server:
         except OSError as e:
             logging.error("action: receive_message | result: fail | error: {e}")
         finally:
+            protocol.send_ack_message(client_sock)
             client_sock.close()
             
     def __parse__message_to_bet(self, msg: str):
+        """
+        Parse a message string to a Bet object and store it
+        """
         try:
             fields = msg.split(";")
-            if len(fields) != 6: 
+            if len(fields) != MAX_MESSAGE_FIELDS: 
                 raise ValueError("Incorrect number of fields in the message")
             bet = utils.Bet(fields[0], fields[1], fields[2], fields[3], fields[4], fields[5])
             utils.store_bets([bet])
