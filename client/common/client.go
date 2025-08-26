@@ -64,7 +64,36 @@ func (c *Client) createClientSocket() error {
 	return nil
 }
 
+func (c *Client) sendBetMessage() error {
+	err := SendBetMessage(c.conn, c.bet, c.config.ID)
+		if err != nil {
+			log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
+				c.config.ID,
+				err,
+			)
+		}
+	return nil
+}
 
+func (c *Client) receiveAck() error {
+	ack, err := ReceiveAll(c.conn)
+		if err != nil {
+			log.Errorf("action: receive_ack | result: fail | client_id: %v | error: %v",
+				c.config.ID,
+				err,
+			)
+			return err
+		}
+
+		if ack == 1{
+			log.Infof("action: apuesta_enviada | result: success | dni: ${%d} | numero: ${%d}", 
+    			c.bet.DNI, c.bet.BetNumber)
+		} else {
+			log.Infof("action: apuesta_enviada | result: fail | dni: ${%d} | numero: ${%d}", 
+    			c.bet.DNI, c.bet.BetNumber)
+		}
+	return nil
+}
 
 // StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop(signals chan os.Signal) {
@@ -77,40 +106,11 @@ func (c *Client) StartClientLoop(signals chan os.Signal) {
 	default: 
 		c.createClientSocket()
 
-		err := SendBetMessage(c.conn, c.bet, c.config.ID)
-		if err != nil {
-			log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
-				c.config.ID,
-				err,
-			)
-			return
-		}
+		c.sendBetMessage()
 
-		ack, err := ReceiveAckMessage(c.conn)
-		if err != nil {
-			log.Errorf("action: receive_ack | result: fail | client_id: %v | error: %v",
-				c.config.ID,
-				err,
-			)
-			return
-		}
-
-		if ack == 1{
-			log.Infof("action: apuesta_enviada | result: success | dni: ${%d} | numero: ${%d}", 
-    			c.bet.DNI, c.bet.BetNumber)
-		} else {
-			log.Infof("action: apuesta_enviada | result: fail | dni: ${%d} | numero: ${%d}", 
-    			c.bet.DNI, c.bet.BetNumber)
-		}
+		c.receiveAck()
 
 		c.conn.Close()
-
-		
-		
-		/*log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
-			c.config.ID,
-			msg,
-		)*/
 
 	}
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
