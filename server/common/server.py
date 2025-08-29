@@ -49,9 +49,9 @@ class Server:
             """logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')"""
             bets_list = protocol.parse_message_to_bet(msg)
             utils.store_bets(bets_list)
-            logging.info(f"action: apuesta_recibida | result: success | cantidad: ${{{len(bets_list)}}}")
+            logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(bets_list)}")
         except OSError as e:
-            logging.error(f"action: apuesta_recibida | result: fail | cantidad: ${{{len(bets_list)}}}")
+            logging.error(f"action: apuesta_recibida | result: fail | cantidad: {len(bets_list)}")
         finally:
             protocol.send_ack_message(client_sock)
             client_sock.close()
