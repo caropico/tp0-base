@@ -63,7 +63,7 @@ def parse_message_to_bet(msg: str) -> list[utils.Bet]:
         if len(lines) < 1:
             raise ValueError("Empty message")
         bets = []
-        for i in range(1, len(lines)):
+        for i in range(0, len(lines)):
             line = lines[i].strip()
             if not line:
                 continue
