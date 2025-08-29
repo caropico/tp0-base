@@ -40,12 +40,7 @@ func InitConfig() (*viper.Viper, error) {
 	v.BindEnv("loop", "period")
 	v.BindEnv("loop", "amount")
 	v.BindEnv("log", "level")
-
-	v.BindEnv("NOMBRE")
-	v.BindEnv("APELLIDO")
-	v.BindEnv("DOCUMENTO")
-	v.BindEnv("NACIMIENTO")
-	v.BindEnv("NUMERO")
+	v.BindEnv("batch", "maxAmount")
 
 	// Try to read configuration from config file. If config file
 	// does not exists then ReadInConfig will fail but configuration
@@ -117,20 +112,13 @@ func main() {
 		ID:            v.GetString("id"),
 		LoopAmount:    v.GetInt("loop.amount"),
 		LoopPeriod:    v.GetDuration("loop.period"),
-	}
-
-	clientBet := common.ClientBet{
-		FirstName: v.GetString("NOMBRE"),
-		LastName:      v.GetString("APELLIDO"),
-		DNI:    v.GetInt("DOCUMENTO"),
-		Birthday:    v.GetString("NACIMIENTO"),
-		BetNumber:    v.GetInt("NUMERO"),
+		MaxAmountBatch: v.GetInt("batch.maxAmount"),
 	}
 
 
 	signals := make(chan os.Signal, 1) 
 	signal.Notify(signals, syscall.SIGTERM)
 
-	client := common.NewClient(clientConfig,clientBet)
+	client := common.NewClient(clientConfig)
 	client.StartClientLoop(signals)
 }

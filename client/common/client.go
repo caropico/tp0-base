@@ -5,7 +5,7 @@ import (
 	//"fmt"
 	"net"
 	"time"
-
+	"io"
 	"github.com/op/go-logging"
 
 	"os"
@@ -18,6 +18,7 @@ type ClientConfig struct {
 	ServerAddress string
 	LoopAmount    int
 	LoopPeriod    time.Duration
+	MaxAmountBatch int
 }
 
 // ClientBet stores client bet data
@@ -34,15 +35,15 @@ type ClientBet struct {
 type Client struct {
 	config ClientConfig
 	conn   net.Conn
-	bet   ClientBet
+	isRunning bool
 }
 
 // NewClient Initializes a new client receiving the configuration
 // as a parameter
-func NewClient(config ClientConfig, bet ClientBet) *Client {
+func NewClient(config ClientConfig) *Client {
 	client := &Client{
 		config: config,
-		bet: bet,
+		isRunning: false,
 	}
 	return client
 }
@@ -64,17 +65,6 @@ func (c *Client) createClientSocket() error {
 	return nil
 }
 
-func (c *Client) sendBetMessage() error {
-	err := SendBetMessage(c.conn, c.bet, c.config.ID)
-		if err != nil {
-			log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
-				c.config.ID,
-				err,
-			)
-		}
-	return nil
-}
-
 func (c *Client) receiveAck() error {
 	ack, err := ReceiveAll(c.conn)
 		if err != nil {
@@ -86,32 +76,74 @@ func (c *Client) receiveAck() error {
 		}
 
 		if ack == 1{
-			log.Infof("action: apuesta_enviada | result: success | dni: ${%d} | numero: ${%d}", 
-    			c.bet.DNI, c.bet.BetNumber)
+			log.Infof("action: apuesta_enviada | result: success ")
 		} else {
-			log.Infof("action: apuesta_enviada | result: fail | dni: ${%d} | numero: ${%d}", 
-    			c.bet.DNI, c.bet.BetNumber)
+			log.Infof("action: apuesta_enviada | result: fail ")
 		}
 	return nil
 }
 
+func (c *Client) sendBetMessage(bets []ClientBet) error {
+    err := SendBetMessage(c.conn, bets, c.config.ID)
+    if err != nil {
+        log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
+            c.config.ID, err)
+    }
+    return err
+}
+
+
 // StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop(signals chan os.Signal) {
-	// There is an autoincremental msgID to identify every message sent
-	// Messages if the message amount threshold has not been surpassed
-	select {
-	case <- signals:
-		log.Infof("action: graceful_shutdown | result: success | client_id: %v", c.config.ID)
-		return
-	default: 
-		c.createClientSocket()
+	c.isRunning = true
+	processor, err := createCSVProcessor("./agency.csv", c.config.MaxAmountBatch)
+    if err != nil {
+        log.Errorf("action: create_csv_processor | result: fail | client_id: %v | error: %v", c.config.ID, err)
+        return
+    }
+    defer processor.Close() 
+	for c.isRunning {
+		select {
+			case <- signals:
+			log.Infof("action: graceful_shutdown | result: success | client_id: %v", c.config.ID)
+			c.isRunning = false
+			return
+		default: 
+			dataBatch, err := processor.readNextBatch()
+			if err != nil {
+				if err == io.EOF {
+					c.isRunning = false
+					c.conn.Close()
+					break
+				}
+			log.Errorf("action: read_batch | result: fail | error: %v", err)
+			c.conn.Close()
+			break
+			}
 
-		c.sendBetMessage()
-
-		c.receiveAck()
-
-		c.conn.Close()
-
+			err = c.createClientSocket()
+        	if err != nil {
+            	log.Errorf("action: create_socket | result: fail | error: %v", err)
+            	break
+        	}
+	
+			err = c.sendBetMessage(dataBatch)
+            if err != nil {
+                log.Errorf("action: send_batch | result: fail | client_id: %v | error: %v", 
+                    c.config.ID, err)
+                c.conn.Close()
+                break
+            }
+            
+            err = c.receiveAck()
+            if err != nil {
+                log.Errorf("action: receive_batch_ack | result: fail | client_id: %v | error: %v", 
+                    c.config.ID, err)
+            }
+            
+            c.conn.Close()
+		}
 	}
+
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
 }

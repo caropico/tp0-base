@@ -1,5 +1,11 @@
 import struct
 import socket
+import logging
+from common import utils
+
+
+MAX_MESSAGE_FIELDS = 6
+
 
 def receive_bet_message(client_sock):
     
@@ -47,4 +53,28 @@ def send_ack_message(client_sock):
             total_bytes_sent += bytes_sent
     except Exception as e:
         raise Exception(f"Error sending ACK: {e}")
+    
+def parse_message_to_bet(msg: str) -> list[utils.Bet]:
+    """
+    Parse a message string to a Bet object and store it
+    """
+    try:
+        lines = msg.strip().split('\n')
+        if len(lines) < 1:
+            raise ValueError("Empty message")
+        bets = []
+        for i in range(1, len(lines)):
+            line = lines[i].strip()
+            if not line:
+                continue
+                
+            fields = line.split(';')
+            if len(fields) != MAX_MESSAGE_FIELDS:
+                raise ValueError(f"Line {i}: Expected {MAX_MESSAGE_FIELDS} fields, got {len(fields)}")
+            
+            bet = utils.Bet(fields[0], fields[1], fields[2], fields[3], fields[4], fields[5])
+            bets.append(bet)
+        return bets
+    except Exception as e:
+        raise Exception(f"Error parsing bets: {e}")
     

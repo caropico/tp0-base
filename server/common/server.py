@@ -4,7 +4,6 @@ import logging
 from common import protocol
 from common import utils
 
-MAX_MESSAGE_FIELDS = 6
 
 
 class Server:
@@ -30,7 +29,8 @@ class Server:
         try: 
             while self._is_running:
                 client_sock = self.__accept_new_connection()
-                self.__handle_client_connection(client_sock)
+                if client_sock:
+                    self.__handle_client_connection(client_sock)
         except OSError:
             logging.info('action: server_loop_interrupted | result: success')
             
@@ -42,30 +42,21 @@ class Server:
         If a problem arises in the communication with the client, the
         client socket will also be closed
         """
+        bets_list = []
         try:
             msg = protocol.receive_bet_message(client_sock)
             addr = client_sock.getpeername()
-            logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')
-            self.__parse__message_to_bet(msg)
+            """logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')"""
+            bets_list = protocol.parse_message_to_bet(msg)
+            utils.store_bets(bets_list)
+            logging.info(f"action: apuesta_recibida | result: success | cantidad: ${{{len(bets_list)}}}")
         except OSError as e:
-            logging.error("action: receive_message | result: fail | error: {e}")
+            logging.error(f"action: apuesta_recibida | result: fail | cantidad: ${{{len(bets_list)}}}")
         finally:
             protocol.send_ack_message(client_sock)
             client_sock.close()
             
-    def __parse__message_to_bet(self, msg: str):
-        """
-        Parse a message string to a Bet object and store it
-        """
-        try:
-            fields = msg.split(";")
-            if len(fields) != MAX_MESSAGE_FIELDS: 
-                raise ValueError("Incorrect number of fields in the message")
-            bet = utils.Bet(fields[0], fields[1], fields[2], fields[3], fields[4], fields[5])
-            utils.store_bets([bet])
-            logging.info(f"action: apuesta_almacenada | result: success | dni: ${{{bet.document}}} | numero: ${{{bet.number}}}")
-        except Exception as e:
-            logging.error(f"action: apuesta_almacenada | result: fail | error: {e} | msg: {msg}")
+
 
     def __accept_new_connection(self):
         """

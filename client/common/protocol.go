@@ -4,22 +4,17 @@ import (
     "fmt"
     "encoding/binary"
     "net"
+    "strings"
 )
 
-type Bet struct {
-    Agency    string
-    FirsName      string
-    Last   string
-    DNI  int
-    Birthday string
-    Number    int
-}
-
-
-func SendBetMessage(conn net.Conn, bet ClientBet, agencyId string) error {
-    message := fmt.Sprintf("%s;%s;%s;%d;%s;%d", 
-        agencyId, bet.FirstName, bet.LastName, 
-        bet.DNI, bet.Birthday, bet.BetNumber)
+func SendBetMessage(conn net.Conn, bet []ClientBet, agencyId string) error {
+    bet_msg := make([]string,0, len(bet))
+    for _, b := range bet {
+        bet_msg = append(bet_msg, fmt.Sprintf("%s;%s;%s;%d;%s;%d", 
+            agencyId,b.FirstName, b.LastName, b.DNI, b.Birthday, b.BetNumber))
+    }
+    
+    message := strings.Join(bet_msg, "\n")
 
     if len(message) > 65535 {
         return fmt.Errorf("message too long")
