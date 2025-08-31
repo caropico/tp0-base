@@ -25,6 +25,10 @@ type CSVBatchProcessor struct {
     isEOF     bool
 }
 
+func (p *CSVBatchProcessor) HasMoreBatches() bool {
+    return !p.isEOF 
+}
+
 
 func createCSVProcessor(filepath string, batchSize int) (*CSVBatchProcessor, error){
 	file, err := os.Open(filepath)

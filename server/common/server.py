@@ -4,7 +4,9 @@ import logging
 from common import protocol
 from common import utils
 
-
+LOAD_BET_MESSAGE_CODE = 0x02
+CHECK_FOR_WINNERS_MESSAGE_CODE = 0x03
+AMOUT_OF_AGENCIES = 5
 
 class Server:
     def __init__(self, port, listen_backlog):
@@ -13,6 +15,7 @@ class Server:
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
         self._is_running = False
+        self._waiting_agencies = {}
 
     def run(self):
         """
@@ -44,6 +47,16 @@ class Server:
         """
         bets_list = []
         try:
+            code = protocol.receive_code_message(client_sock)
+            if code == LOAD_BET_MESSAGE_CODE:
+                self.__handle_bets_loads(client_sock)
+            elif code == CHECK_FOR_WINNERS_MESSAGE_CODE:
+                self.__handle_check_for_winners(client_sock)
+        except OSError as e:
+            logging.error(f"action: apuesta_recibida | result: fail | cantidad: {len(bets_list)}")
+            
+    def __handle_bets_loads(self, client_sock):
+        try:
             msg = protocol.receive_bet_message(client_sock)
             addr = client_sock.getpeername()
             """logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')"""
@@ -56,6 +69,52 @@ class Server:
             protocol.send_ack_message(client_sock)
             client_sock.close()
             
+    def __handle_check_for_winners(self, client_sock):
+        try:
+            msg = protocol.receive_bet_message(client_sock)
+            agency_id = msg.strip()
+            addr = client_sock.getpeername()
+            
+            logging.info(f"action: agency_ready_for_lottery | agency_id: {agency_id} | ip: {addr[0]}")
+            
+            self._waiting_agencies[agency_id] = client_sock
+            
+            self.__validate_amount_of_agencies_ready()
+            
+        except Exception as e:
+            logging.error(f"action: handle_check_winners | result: fail | error: {e}")
+            client_sock.close()
+        
+    def __validate_amount_of_agencies_ready(self):
+        agencies_ready = len(self._waiting_agencies)
+        
+        if agencies_ready == AMOUT_OF_AGENCIES:
+            logging.info(f"action: sorteo | result: success")  
+            
+            all_bets = list(utils.load_bets())
+            
+            for agency_id, client_sock in self._waiting_agencies.items():
+                try:
+                    agency_bets = [bet for bet in all_bets if str(bet.agency) == agency_id]
+                    
+                    winners = [bet for bet in agency_bets if utils.has_won(bet)]
+                    winner_dnis = [str(winner.document) for winner in winners]
+                    
+                    logging.info(f"DEBUG: agency_id={agency_id}, winner_dnis={winner_dnis}")
+            
+                    protocol.send_winners_message(client_sock, winner_dnis)
+                    
+                    logging.info(f"action: send_winners | result: success | agency_id: {agency_id} | winners: {len(winners)}")
+                    
+                except Exception as e:
+                    logging.error(f"action: send_winners | result: fail | agency_id: {agency_id} | error: {e}")
+                finally:
+                    client_sock.close()
+            
+            self._waiting_agencies.clear()
+            
+        else:
+            logging.info(f"action: waiting_for_agencies | agencies_ready: {agencies_ready} | total_needed: {AMOUT_OF_AGENCIES}")
 
 
     def __accept_new_connection(self):

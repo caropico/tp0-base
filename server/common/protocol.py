@@ -5,6 +5,8 @@ from common import utils
 
 
 MAX_MESSAGE_FIELDS = 6
+SEND_WINNERS_MESSAGE_CODE = 0x04
+SEND_ACK_OF_BETS_MESSAGE_CODE = 0x05
 
 
 def receive_bet_message(client_sock):
@@ -15,6 +17,19 @@ def receive_bet_message(client_sock):
     
     return message
         
+    
+def receive_code_message(client_sock):
+    try:
+        code_byte = b''
+        while len(code_byte) < 1:
+            chunk = client_sock.recv(1 - len(code_byte))
+            if not chunk:
+                raise ConnectionError("Connection closed while reading code")
+            code_byte += chunk
+        return code_byte[0]
+    except Exception as e:
+        raise Exception(f"Error receiving code: {e}")
+    
     
 def receive_bytes_length(client_sock):
     try:
@@ -77,4 +92,33 @@ def parse_message_to_bet(msg: str) -> list[utils.Bet]:
         return bets
     except Exception as e:
         raise Exception(f"Error parsing bets: {e}")
+    
+    
+def send_winners_message(client_sock, winner_dnis):
+    try:
+        if winner_dnis:
+            message = ";".join(winner_dnis)
+        else:
+            message = "NO_WINNERS"
+        
+        message_bytes = message.encode('utf-8')
+        message_size = len(message_bytes)
+        
+        if message_size > 65535:
+            raise ValueError("Winners message too long")
+        
+        result = bytearray(3 + message_size)
+        result[0] = SEND_WINNERS_MESSAGE_CODE
+        struct.pack_into('>H', result, 1, message_size)
+        result[3:] = message_bytes
+        
+        total_sent = 0
+        while total_sent < len(result):
+            sent = client_sock.send(result[total_sent:])
+            if sent == 0:
+                raise ConnectionError("Connection closed while sending winners")
+            total_sent += sent
+            
+    except Exception as e:
+        raise Exception(f"Error sending winners message: {e}")
     

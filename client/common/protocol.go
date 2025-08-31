@@ -5,6 +5,14 @@ import (
     "encoding/binary"
     "net"
     "strings"
+    "io"
+)
+
+const (
+    MAX_BET_MESSAGE_SIZE = 65535
+    LOAD_BET_MESSAGE_CODE = 0x02
+    CHECK_FOR_WINNERS_MESSAGE_CODE = 0x03
+    SEND_WINNERS_MESSAGE_CODE = 0x04 
 )
 
 func SendBetMessage(conn net.Conn, bet []ClientBet, agencyId string) error {
@@ -16,17 +24,35 @@ func SendBetMessage(conn net.Conn, bet []ClientBet, agencyId string) error {
     
     message := strings.Join(bet_msg, "\n")
 
-    if len(message) > 65535 {
+    if len(message) > MAX_BET_MESSAGE_SIZE {
         return fmt.Errorf("message too long")
     }
     
     messageSize := uint16(len(message))
-    result := make([]byte, 2+len(message))
-    binary.BigEndian.PutUint16(result[0:2], messageSize)
-    copy(result[2:], []byte(message))
+    result := make([]byte, 3+len(message))
+    result[0] = LOAD_BET_MESSAGE_CODE
+    binary.BigEndian.PutUint16(result[1:3], messageSize)
+    copy(result[3:], []byte(message))
 
     err := SendAll(conn, result)
 
+    return err
+}
+
+func SendCheckForWinnersMessage(conn net.Conn, agencyId string) error {
+    message := agencyId
+    
+    if len(message) > MAX_BET_MESSAGE_SIZE {
+        return fmt.Errorf("agency ID too long")
+    }
+    
+    messageSize := uint16(len(message))
+    result := make([]byte, 3+len(message))
+    result[0] = CHECK_FOR_WINNERS_MESSAGE_CODE
+    binary.BigEndian.PutUint16(result[1:3], messageSize)
+    copy(result[3:], []byte(message))
+
+    err := SendAll(conn, result)
     return err
 }
 
@@ -42,7 +68,7 @@ func SendAll(conn net.Conn, data []byte) error {
     return nil
 }
 
-func ReceiveAll(conn net.Conn) (byte,error) {
+func ReceiveAck(conn net.Conn) (byte,error) {
     ack := make([]byte,1)
     totalRead := 0
     for totalRead < 1 {
@@ -54,4 +80,39 @@ func ReceiveAll(conn net.Conn) (byte,error) {
     }
 
     return ack[0],nil
+}
+
+func ReceiveWinnersMessage(conn net.Conn) ([]string, error) {
+    codeBytes := make([]byte, 1)
+    _, err := io.ReadFull(conn, codeBytes)
+    if err != nil {
+        return nil, fmt.Errorf("error receiving message code: %w", err)
+    }
+    
+    if codeBytes[0] != SEND_WINNERS_MESSAGE_CODE {
+        return nil, fmt.Errorf("unexpected message code: %d", codeBytes[0])
+    }
+    
+    sizeBytes := make([]byte, 2)
+    _, err = io.ReadFull(conn, sizeBytes)
+    if err != nil {
+        return nil, fmt.Errorf("error receiving message size: %w", err)
+    }
+    
+    messageSize := binary.BigEndian.Uint16(sizeBytes)
+    
+    messageBytes := make([]byte, messageSize)
+    _, err = io.ReadFull(conn, messageBytes)
+    if err != nil {
+        return nil, fmt.Errorf("error receiving message: %w", err)
+    }
+    
+    message := string(messageBytes)
+    if message == "NO_WINNERS" {
+        return []string{}, nil
+    }
+
+    log.Infof("DEBUG: received_message='%s', split_result=%v", message, strings.Split(message, ";"))
+    
+    return strings.Split(message, ";"), nil
 }

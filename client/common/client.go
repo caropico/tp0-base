@@ -66,7 +66,7 @@ func (c *Client) createClientSocket() error {
 }
 
 func (c *Client) receiveAck() error {
-	ack, err := ReceiveAll(c.conn)
+	ack, err := ReceiveAck(c.conn)
 		if err != nil {
 			log.Errorf("action: receive_ack | result: fail | client_id: %v | error: %v",
 				c.config.ID,
@@ -92,6 +92,26 @@ func (c *Client) sendBetMessage(bets []ClientBet) error {
     return err
 }
 
+func (c *Client) CheckForWinners() error {
+    err := SendCheckForWinnersMessage(c.conn, c.config.ID)
+    if err != nil {
+        log.Errorf("action: send_check_winners | result: fail | client_id: %v | error: %v",
+            c.config.ID, err)
+        return err
+    }
+    return nil
+}
+
+func (c *Client) ReceiveWinners() ([]string, error) {
+    msg, err := ReceiveWinnersMessage(c.conn)
+    if err != nil {
+        log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
+            c.config.ID, err)
+			return []string{}, err
+    }
+    return msg, nil
+}
+
 
 // StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop(signals chan os.Signal) {
@@ -102,7 +122,7 @@ func (c *Client) StartClientLoop(signals chan os.Signal) {
         return
     }
     defer processor.Close() 
-	for c.isRunning {
+	for c.isRunning && processor.HasMoreBatches() {
 		select {
 			case <- signals:
 			log.Infof("action: graceful_shutdown | result: success | client_id: %v", c.config.ID)
@@ -143,6 +163,26 @@ func (c *Client) StartClientLoop(signals chan os.Signal) {
             
             c.conn.Close()
 		}
+	}
+
+	if !processor.HasMoreBatches() {
+		err = c.createClientSocket()
+		if err != nil {
+			log.Errorf("action: create_socket | result: fail | error: %v", err)
+			return
+		}
+
+		err := c.CheckForWinners()
+		if err != nil {
+			log.Errorf("action: create_socket | result: fail | error: %v", err)
+		}
+		winners, err := c.ReceiveWinners()
+    	if err != nil {
+        	log.Errorf("action: receive_winners | result: fail | client_id: %v | error: %v",
+            	c.config.ID, err)
+    	}
+		log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
+		c.conn.Close()
 	}
 
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
