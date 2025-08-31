@@ -103,7 +103,7 @@ class Server:
                 self._agency_events[agency_id] = agency_event
                 if len(self._waiting_agencies) == self._num_clients:
                     self.__do_sorteo_and_notify_all()
-            logging.info(f'action: waiting_for_lottery_result | agency_id: {agency_id}')
+            logging.info(f'action: waiting_for_lottery_result | result: success | agency_id: {agency_id}')
             agency_event.wait() 
             winners = self._agency_results[agency_id]
             protocol.send_winners_message(client_sock, winners)
