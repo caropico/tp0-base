@@ -42,6 +42,7 @@ def signal_handler(sig, frame):
     logging.info('action: graceful_shutdown | result: success | signal: SIGTERM')
     if server:
         server.shutdown()
+    logging.info('action: exit | result: success')
 
 def main():
     global server
