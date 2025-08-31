@@ -46,7 +46,7 @@ class Server:
                     client_thread.daemon = True
             
                 client_thread.start()
-                logging.info(f'action: thread_started | thread_id: {client_thread.ident} | is_alive: {client_thread.is_alive()}')
+                logging.info(f'action: thread_started | result: success | thread_id: {client_thread.ident} | is_alive: {client_thread.is_alive()}')
 
         except OSError:
             logging.info('action: server_loop_interrupted | result: success')
