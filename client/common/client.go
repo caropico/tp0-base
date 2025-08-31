@@ -185,5 +185,6 @@ func (c *Client) StartClientLoop(signals chan os.Signal) {
 		c.conn.Close()
 	}
 
+	time.Sleep(c.config.LoopPeriod)
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
 }

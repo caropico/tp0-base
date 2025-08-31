@@ -111,8 +111,6 @@ func ReceiveWinnersMessage(conn net.Conn) ([]string, error) {
     if message == "NO_WINNERS" {
         return []string{}, nil
     }
-
-    log.Infof("DEBUG: received_message='%s', split_result=%v", message, strings.Split(message, ";"))
     
     return strings.Split(message, ";"), nil
 }
