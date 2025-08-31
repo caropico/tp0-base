@@ -12,6 +12,7 @@ services:
     entrypoint: python3 /main.py
     environment:
       - PYTHONUNBUFFERED=1
+      - NUM_CLIENTS=""" + str(num_clients) + """
     networks:
       - testing_net
 """

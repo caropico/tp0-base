@@ -6,16 +6,16 @@ from common import utils
 
 LOAD_BET_MESSAGE_CODE = 0x02
 CHECK_FOR_WINNERS_MESSAGE_CODE = 0x03
-AMOUT_OF_AGENCIES = 5
 
 class Server:
-    def __init__(self, port, listen_backlog):
+    def __init__(self, port, listen_backlog,num_clients):
         # Initialize server socket
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
         self._is_running = False
         self._waiting_agencies = {}
+        self._num_clients = num_clients
 
     def run(self):
         """
@@ -86,7 +86,7 @@ class Server:
     def __validate_amount_of_agencies_ready(self):
         agencies_ready = len(self._waiting_agencies)
         
-        if agencies_ready == AMOUT_OF_AGENCIES:
+        if agencies_ready == self._num_clients:
             logging.info(f"action: sorteo | result: success")  
             
             all_bets = list(utils.load_bets())
@@ -110,7 +110,7 @@ class Server:
             self._waiting_agencies.clear()
             
         else:
-            logging.info(f"action: waiting_agencies | result: in_progress | agencies_ready: {agencies_ready}/{AMOUT_OF_AGENCIES}")
+            logging.info(f"action: waiting_agencies | result: in_progress | agencies_ready: {agencies_ready}/{self._num_clients}")
 
     def __accept_new_connection(self):
         """
