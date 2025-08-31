@@ -110,8 +110,7 @@ class Server:
             self._waiting_agencies.clear()
             
         else:
-            logging.info(f"action: waiting_for_agencies | agencies_ready: {agencies_ready} | total_needed: {AMOUT_OF_AGENCIES}")
-
+            logging.info(f"action: waiting_agencies | result: in_progress | agencies_ready: {agencies_ready}/{AMOUT_OF_AGENCIES}")
 
     def __accept_new_connection(self):
         """
