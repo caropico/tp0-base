@@ -99,9 +99,7 @@ class Server:
                     
                     winners = [bet for bet in agency_bets if utils.has_won(bet)]
                     winner_dnis = [str(winner.document) for winner in winners]
-                    
-                    logging.info(f"DEBUG: agency_id={agency_id}, winner_dnis={winner_dnis}")
-            
+                                
                     protocol.send_winners_message(client_sock, winner_dnis)
                     
                     logging.info(f"action: send_winners | result: success | agency_id: {agency_id} | winners: {len(winners)}")
