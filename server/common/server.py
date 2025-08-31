@@ -74,9 +74,7 @@ class Server:
             msg = protocol.receive_bet_message(client_sock)
             agency_id = msg.strip()
             addr = client_sock.getpeername()
-            
-            logging.info(f"action: agency_ready_for_lottery | agency_id: {agency_id} | ip: {addr[0]}")
-            
+            logging.info(f'action: check_winners | result: success | ip: {addr[0]} | agency_id: {agency_id}')            
             self._waiting_agencies[agency_id] = client_sock
             
             self.__validate_amount_of_agencies_ready()
