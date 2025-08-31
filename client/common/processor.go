@@ -57,7 +57,7 @@ func (p *CSVBatchProcessor) readNextBatch() ([]ClientBet, error) {
         record, err := p.reader.Read()
         if err == io.EOF {
             p.isEOF = true
-            log.Infof("action: reached_end_of_file | final_batch_size: %d", 
+            log.Infof("action: reached_end_of_file | result: sucess | final_batch_size: %d", 
                 len(batch))
             break
         }
