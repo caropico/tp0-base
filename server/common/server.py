@@ -1,5 +1,6 @@
 import socket
 import logging
+import threading
 
 from common import protocol
 from common import utils
@@ -16,6 +17,8 @@ class Server:
         self._is_running = False
         self._waiting_agencies = {}
         self._num_clients = num_clients
+        self._waiting_agencies_lock = threading.Lock()
+        self._bets_storage_lock = threading.Lock()
 
     def run(self):
         """
@@ -33,7 +36,12 @@ class Server:
             while self._is_running:
                 client_sock = self.__accept_new_connection()
                 if client_sock:
-                    self.__handle_client_connection(client_sock)
+                    client_thread = threading.Thread(
+                    target=self.__handle_client_connection, 
+                    args=(client_sock,)
+                )
+                client_thread.daemon = True
+                client_thread.start()
         except OSError:
             logging.info('action: server_loop_interrupted | result: success')
             
@@ -45,15 +53,22 @@ class Server:
         If a problem arises in the communication with the client, the
         client socket will also be closed
         """
-        bets_list = []
-        try:
-            code = protocol.receive_code_message(client_sock)
-            if code == LOAD_BET_MESSAGE_CODE:
-                self.__handle_bets_loads(client_sock)
-            elif code == CHECK_FOR_WINNERS_MESSAGE_CODE:
-                self.__handle_check_for_winners(client_sock)
-        except OSError as e:
-            logging.error(f"action: apuesta_recibida | result: fail | cantidad: {len(bets_list)}")
+        keep_running = True
+        while keep_running:
+            try:
+                client_addr = client_sock.getpeername()
+                code = protocol.receive_code_message(client_sock)
+                if code == LOAD_BET_MESSAGE_CODE:
+                    self.__handle_bets_loads(client_sock)
+                elif code == CHECK_FOR_WINNERS_MESSAGE_CODE:
+                    self.__handle_check_for_winners(client_sock)
+                    keep_running = False
+            except ConnectionError:
+                logging.info(f'action: client_disconnected | result: success | client: {client_addr[0]}:{client_addr[1]}')
+                keep_running = False
+            except Exception as e:
+                logging.error(f"action: handle_message | result: fail | client: {client_addr[0]}:{client_addr[1]} | error: {e}")
+                keep_running = False
             
     def __handle_bets_loads(self, client_sock):
         try:
@@ -61,13 +76,14 @@ class Server:
             addr = client_sock.getpeername()
             """logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')"""
             bets_list = protocol.parse_message_to_bet(msg)
-            utils.store_bets(bets_list)
+            with self._bets_storage_lock:
+                utils.store_bets(bets_list)
             logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(bets_list)}")
         except OSError as e:
             logging.error(f"action: apuesta_recibida | result: fail | cantidad: {len(bets_list)}")
         finally:
             protocol.send_ack_message(client_sock)
-            client_sock.close()
+            """client_sock.close()"""
             
     def __handle_check_for_winners(self, client_sock):
         try:
@@ -75,10 +91,9 @@ class Server:
             agency_id = msg.strip()
             addr = client_sock.getpeername()
             logging.info(f'action: check_winners | result: success | ip: {addr[0]} | agency_id: {agency_id}')            
-            self._waiting_agencies[agency_id] = client_sock
-            
-            self.__validate_amount_of_agencies_ready()
-            
+            with self._waiting_agencies_lock:
+                self._waiting_agencies[agency_id] = client_sock
+                self.__validate_amount_of_agencies_ready()
         except Exception as e:
             logging.error(f"action: handle_check_winners | result: fail | error: {e}")
             client_sock.close()

@@ -122,6 +122,11 @@ func (c *Client) StartClientLoop(signals chan os.Signal) {
         return
     }
     defer processor.Close() 
+	err = c.createClientSocket()
+    if err != nil {
+        log.Errorf("action: create_socket | result: fail | error: %v", err)
+    }
+	defer c.conn.Close()
 	for c.isRunning && processor.HasMoreBatches() {
 		select {
 			case <- signals:
@@ -133,25 +138,25 @@ func (c *Client) StartClientLoop(signals chan os.Signal) {
 			if err != nil {
 				if err == io.EOF {
 					c.isRunning = false
-					c.conn.Close()
+					//c.conn.Close()
 					break
 				}
 			log.Errorf("action: read_batch | result: fail | error: %v", err)
-			c.conn.Close()
+			//c.conn.Close()
 			break
 			}
 
-			err = c.createClientSocket()
+			/*err = c.createClientSocket()
         	if err != nil {
             	log.Errorf("action: create_socket | result: fail | error: %v", err)
             	break
-        	}
+        	}*/
 	
 			err = c.sendBetMessage(dataBatch)
             if err != nil {
                 log.Errorf("action: send_batch | result: fail | client_id: %v | error: %v", 
                     c.config.ID, err)
-                c.conn.Close()
+                //c.conn.Close()
                 break
             }
             
@@ -161,16 +166,16 @@ func (c *Client) StartClientLoop(signals chan os.Signal) {
                     c.config.ID, err)
             }
             
-            c.conn.Close()
+            //c.conn.Close()
 		}
 	}
 
 	if !processor.HasMoreBatches() {
-		err = c.createClientSocket()
+		/*err = c.createClientSocket()
 		if err != nil {
 			log.Errorf("action: create_socket | result: fail | error: %v", err)
 			return
-		}
+		}*/
 
 		err := c.CheckForWinners()
 		if err != nil {
@@ -182,7 +187,7 @@ func (c *Client) StartClientLoop(signals chan os.Signal) {
             	c.config.ID, err)
     	}
 		log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
-		c.conn.Close()
+		//c.conn.Close()
 	}
 
 	time.Sleep(c.config.LoopPeriod)
