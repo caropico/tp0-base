@@ -33,8 +33,8 @@ type ClientBet struct {
 // Client Entity that encapsulates how
 type Client struct {
 	config ClientConfig
-	conn   net.Conn
 	bet   ClientBet
+	protocol *Protocol
 }
 
 // NewClient Initializes a new client receiving the configuration
@@ -60,12 +60,12 @@ func (c *Client) createClientSocket() error {
 			err,
 		)
 	}
-	c.conn = conn
+	c.protocol = NewProtocol(conn)
 	return nil
 }
 
 func (c *Client) sendBetMessage() error {
-	err := SendBetMessage(c.conn, c.bet, c.config.ID)
+	err := c.protocol.SendBetMessage(c.bet, c.config.ID)
 		if err != nil {
 			log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
 				c.config.ID,
@@ -76,7 +76,7 @@ func (c *Client) sendBetMessage() error {
 }
 
 func (c *Client) receiveAck() error {
-	ack, err := ReceiveAll(c.conn)
+	ack, err := c.protocol.ReceiveAll()
 		if err != nil {
 			log.Errorf("action: receive_ack | result: fail | client_id: %v | error: %v",
 				c.config.ID,
@@ -95,6 +95,12 @@ func (c *Client) receiveAck() error {
 	return nil
 }
 
+func (c *Client) closeConnection() {
+    if c.protocol != nil {
+        c.protocol.Close()
+    }
+}
+
 // StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop(signals chan os.Signal) {
 	// There is an autoincremental msgID to identify every message sent
@@ -110,7 +116,7 @@ func (c *Client) StartClientLoop(signals chan os.Signal) {
 
 		c.receiveAck()
 
-		c.conn.Close()
+		c.closeConnection()
 
 	}
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)

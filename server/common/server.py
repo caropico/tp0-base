@@ -1,7 +1,7 @@
 import socket
 import logging
 
-from common import protocol
+from common.protocol import Protocol
 from common import utils
 
 MAX_MESSAGE_FIELDS = 6
@@ -42,30 +42,18 @@ class Server:
         If a problem arises in the communication with the client, the
         client socket will also be closed
         """
+        protocol = Protocol(client_sock)
         try:
-            msg = protocol.receive_bet_message(client_sock)
+            msg = protocol.receive_bet_message()
             addr = client_sock.getpeername()
             logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')
-            self.__parse__message_to_bet(msg)
+            bet = protocol.parse_message_to_bet(msg)
+            utils.store_bets([bet])
         except OSError as e:
             logging.error("action: receive_message | result: fail | error: {e}")
         finally:
-            protocol.send_ack_message(client_sock)
-            client_sock.close()
-            
-    def __parse__message_to_bet(self, msg: str):
-        """
-        Parse a message string to a Bet object and store it
-        """
-        try:
-            fields = msg.split(";")
-            if len(fields) != MAX_MESSAGE_FIELDS: 
-                raise ValueError("Incorrect number of fields in the message")
-            bet = utils.Bet(fields[0], fields[1], fields[2], fields[3], fields[4], fields[5])
-            utils.store_bets([bet])
-            logging.info(f"action: apuesta_almacenada | result: success | dni: ${{{bet.document}}} | numero: ${{{bet.number}}}")
-        except Exception as e:
-            logging.error(f"action: apuesta_almacenada | result: fail | error: {e} | msg: {msg}")
+            protocol.send_ack_message()
+            protocol.close()
 
     def __accept_new_connection(self):
         """
