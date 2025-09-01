@@ -75,35 +75,71 @@ client1 exited with code 0
 ## Parte 1: Introducción a Docker
 En esta primera parte del trabajo práctico se plantean una serie de ejercicios que sirven para introducir las herramientas básicas de Docker que se utilizarán a lo largo de la materia. El entendimiento de las mismas será crucial para el desarrollo de los próximos TPs.
 
-### Ejercicio N°1:
-Definir un script de bash `generar-compose.sh` que permita crear una definición de Docker Compose con una cantidad configurable de clientes.  El nombre de los containers deberá seguir el formato propuesto: client1, client2, client3, etc. 
+### Ejercicio N.º 1:
 
-El script deberá ubicarse en la raíz del proyecto y recibirá por parámetro el nombre del archivo de salida y la cantidad de clientes esperados:
+#### Solución
+Se creó el script generar-compose.sh, que permite crear automáticamente un archivo docker-compose.yaml con un servidor y una cantidad configurable de clientes (client1, client2, etc.). Al ejecutarlo, se llama a mi-generador.py, que construye el contenido del Docker Compose y lo guarda en el archivo indicado.
 
-`./generar-compose.sh docker-compose-dev.yaml 5`
-
-Considerar que en el contenido del script pueden invocar un subscript de Go o Python:
+Se puede utilizar el generador de la siguiente manera:
 
 ```
-#!/bin/bash
-echo "Nombre del archivo de salida: $1"
-echo "Cantidad de clientes: $2"
-python3 mi-generador.py $1 $2
+./generar-compose.sh <output_file> <n_clients>
 ```
 
-En el archivo de Docker Compose de salida se pueden definir volúmenes, variables de entorno y redes con libertad, pero recordar actualizar este script cuando se modifiquen tales definiciones en los sucesivos ejercicios.
+Para validar la correcta ejecución del script se puede ejecutar:
+
+```
+cat <output_file>
+```
 
 ### Ejercicio N°2:
-Modificar el cliente y el servidor para lograr que realizar cambios en el archivo de configuración no requiera reconstruír las imágenes de Docker para que los mismos sean efectivos. La configuración a través del archivo correspondiente (`config.ini` y `config.yaml`, dependiendo de la aplicación) debe ser inyectada en el container y persistida por fuera de la imagen (hint: `docker volumes`).
 
+#### Solución
+Se modificó la definición de docker-compose.yaml dentro de mi-generador.py y el Dockerfile del cliente para que los archivos de configuración no queden dentro de la imagen, sino que se inyecten como volúmenes al momento de levantar los contenedores.
+
+De esta forma, al ejecutar el script generador, cualquier cambio en config.ini (servidor) o config.yaml (clientes) se aplica de inmediato sin necesidad de reconstruir la imagen.
+
+Ejemplo de modificación del servicio server:
+```
+volumes:
+  - ./server/config.ini:/config.ini
+```
+
+Para validar la correcta implementación se puede ejecutar el script:
+```
+./generar-compose.sh docker-compose-dev.yaml 1
+```
+Levantar los contenedores:
+```
+make docker-compose-up
+```
+Modificar la configuración ./server/config.ini o ./client/config.yaml
+
+Verificar dentro del contenedor:
+```
+docker exec -it server cat /config.ini
+```
 
 ### Ejercicio N°3:
-Crear un script de bash `validar-echo-server.sh` que permita verificar el correcto funcionamiento del servidor utilizando el comando `netcat` para interactuar con el mismo. Dado que el servidor es un echo server, se debe enviar un mensaje al servidor y esperar recibir el mismo mensaje enviado.
 
-En caso de que la validación sea exitosa imprimir: `action: test_echo_server | result: success`, de lo contrario imprimir:`action: test_echo_server | result: fail`.
+#### Solución
+Se creó el script en bash validar-echo-server.sh para comprobar automáticamente que el servidor funciona como un echo server.
 
-El script deberá ubicarse en la raíz del proyecto. Netcat no debe ser instalado en la máquina _host_ y no se pueden exponer puertos del servidor para realizar la comunicación (hint: `docker network`). `
+El script levanta un contenedor temporal con alpine y netcat dentro de la misma red de Docker que el servidor (tp0_testing_net) y ejecuta el siguiente comando:
+```
+"echo '$mensaje' | nc server 12345"
+```
 
+Para validar el correcto funcionamiento ejecutar:
+```
+./generar-compose.sh docker-compose-dev.yaml 1
+```
+```
+make docker-compose-up
+```
+```
+./validar-echo-server.sh
+```
 
 ### Ejercicio N°4:
 Modificar servidor y cliente para que ambos sistemas terminen de forma _graceful_ al recibir la signal SIGTERM. Terminar la aplicación de forma _graceful_ implica que todos los _file descriptors_ (entre los que se encuentran archivos, sockets, threads y procesos) deben cerrarse correctamente antes que el thread de la aplicación principal muera. Loguear mensajes en el cierre de cada recurso (hint: Verificar que hace el flag `-t` utilizado en el comando `docker compose down`).
