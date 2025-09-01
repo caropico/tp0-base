@@ -1,9 +1,9 @@
 import socket
 import logging
 import threading
-import time
 
-from common import protocol
+from common.protocol import Protocol
+
 from common import utils
 
 LOAD_BET_MESSAGE_CODE = 0x02
@@ -19,9 +19,8 @@ class Server:
         self._waiting_agencies = {}
         self._num_clients = num_clients
         self._waiting_agencies_lock = threading.Lock()
-        self._bets_storage_lock = threading.Lock()
-        self._agency_events = {}
-        self._agency_results = {}
+        self._bets_storage_lock = threading.Lock()        
+        self._barrier = threading.Barrier(self._num_clients, action=self.__do_sorteo_and_send_results)
 
     def run(self):
         """
@@ -47,7 +46,6 @@ class Server:
             
                 client_thread.start()
                 logging.info(f'action: thread_started | result: success | thread_id: {client_thread.ident} | is_alive: {client_thread.is_alive()}')
-
         except OSError:
             logging.info('action: server_loop_interrupted | result: success')
             
@@ -59,82 +57,70 @@ class Server:
         If a problem arises in the communication with the client, the
         client socket will also be closed
         """
+        protocol = Protocol(client_sock)
+        try:
+            code = protocol.receive_code_message()
+            if code == LOAD_BET_MESSAGE_CODE:
+                self.__handle_bets_loads(protocol)
+            elif code == CHECK_FOR_WINNERS_MESSAGE_CODE:
+                self.__handle_check_for_winners(protocol)
+        except OSError as e:
+            logging.error(f"action: apuesta_recibida | result: fail")
+
+            
+    def __handle_bets_loads(self, protocol):
+        """Maneja múltiples batches hasta recibir EOF"""
         keep_running = True
-        client_addr = client_sock.getpeername()
         while keep_running:
             try:
-                code = protocol.receive_code_message(client_sock)
-                if code == LOAD_BET_MESSAGE_CODE:
-                    self.__handle_bets_loads(client_sock)
-                elif code == CHECK_FOR_WINNERS_MESSAGE_CODE:
-                    self.__handle_check_for_winners(client_sock)
-                    keep_running = False
-            except ConnectionError:
-                logging.info(f'action: client_disconnected | result: success | client: {client_addr[0]}:{client_addr[1]}')
-                keep_running = False
-            except Exception as e:
-                logging.error(f"action: handle_message | result: fail | client: {client_addr[0]}:{client_addr[1]} | error: {e}")
-                keep_running = False
-            
-    def __handle_bets_loads(self, client_sock):
-        try:
-            msg = protocol.receive_bet_message(client_sock)
-            addr = client_sock.getpeername()
-            """logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')"""
-            bets_list = protocol.parse_message_to_bet(msg)
-            with self._bets_storage_lock:
+                msg, is_eof = protocol.receive_bet_message()
+                bets_list = protocol.parse_message_to_bet(msg)
                 utils.store_bets(bets_list)
-            logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(bets_list)}")
-        except OSError as e:
-            logging.error(f"action: apuesta_recibida | result: fail | cantidad: {len(bets_list)}")
-        finally:
-            protocol.send_ack_message(client_sock)
-            """client_sock.close()"""
+                logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(bets_list)}")
+                protocol.send_ack_message()
+                
+                if is_eof:
+                    logging.info("action: batch_session_completed | result: success")
+                    keep_running = False
+            except Exception as e:
+                logging.error(f"action: batch_processing | result: fail | error: {e}")
+                break
+        protocol.close()
             
-    def __handle_check_for_winners(self, client_sock):
+    def __handle_check_for_winners(self, protocol):
         try:
-            msg = protocol.receive_bet_message(client_sock)
+            msg = protocol.receive_check_winners()
             agency_id = msg.strip()
-            addr = client_sock.getpeername()
-            logging.info(f'action: check_winners | result: success | ip: {addr[0]} | agency_id: {agency_id}')     
-            agency_event = threading.Event()       
-            with self._waiting_agencies_lock:
-                self._waiting_agencies[agency_id] = client_sock
-                self._agency_events[agency_id] = agency_event
+            with self._waiting_agencies_lock:       
+                self._waiting_agencies[agency_id] = protocol 
                 if len(self._waiting_agencies) == self._num_clients:
-                    self.__do_sorteo_and_notify_all()
-            logging.info(f'action: waiting_for_lottery_result | result: success | agency_id: {agency_id}')
-            agency_event.wait() 
-            winners = self._agency_results[agency_id]
-            protocol.send_winners_message(client_sock, winners)
-            logging.info(f"action: send_winners | result: success | agency_id: {agency_id} | winners: {len(winners)}")
+                    self.__do_sorteo_and_send_results()
+            self._barrier.wait()
         except Exception as e:
             logging.error(f"action: handle_check_winners | result: fail | error: {e}")
-        finally:
-            client_sock.close()
+            protocol.close()
         
-    def __do_sorteo_and_notify_all(self):
+    def __do_sorteo_and_send_results(self):    
         logging.info(f"action: sorteo | result: success")  
         
         all_bets = list(utils.load_bets())
         
-        for agency_id in self._waiting_agencies.keys():
+        for agency_id, protocol in self._waiting_agencies.items():
             try:
                 agency_bets = [bet for bet in all_bets if str(bet.agency) == agency_id]
-                
                 winners = [bet for bet in agency_bets if utils.has_won(bet)]
                 winner_dnis = [str(winner.document) for winner in winners]
-                            
-                self._agency_results[agency_id] = winner_dnis
-                self._agency_events[agency_id].set()
                 
+                protocol.send_winners_message(winner_dnis)
                 logging.info(f"action: send_winners | result: success | agency_id: {agency_id} | winners: {len(winners)}")
                 
             except Exception as e:
                 logging.error(f"action: send_winners | result: fail | agency_id: {agency_id} | error: {e}")
-        
-        self._waiting_agencies.clear()
+            finally:
+                protocol.close()
             
+        self._waiting_agencies.clear()
+        
 
     def __accept_new_connection(self):
         """
