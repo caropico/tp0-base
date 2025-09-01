@@ -15,11 +15,28 @@ class Protocol:
         """
         Receive messages from the client socket and return it as a string
         """
+        eof_flag = self._receive_eof_flag()
         message_length = self._receive_bytes_length()
             
         message = self._receive_message(message_length)
         
-        return message
+        is_eof = (eof_flag == 0x01)
+        return (message, is_eof)
+    
+    def _receive_eof_flag(self):
+        """
+        Receive the EOF flag (1 byte)
+        """
+        try:
+            eof_bytes = b''
+            while len(eof_bytes) < 1:
+                chunk = self.client_sock.recv(1 - len(eof_bytes))
+                if not chunk:
+                    raise ConnectionError("Connection closed while reading EOF flag")
+                eof_bytes += chunk
+            return eof_bytes[0]
+        except Exception as e:
+            raise Exception(f"Error receiving EOF flag: {e}")
             
         
     def _receive_bytes_length(self):

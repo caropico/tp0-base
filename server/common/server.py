@@ -44,18 +44,22 @@ class Server:
         """
         bets_list = []
         protocol = Protocol(client_sock)
-        try:
-            msg = protocol.receive_bet_message()
-            addr = client_sock.getpeername()
-            """logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')"""
-            bets_list = protocol.parse_message_to_bet(msg)
-            utils.store_bets(bets_list)
-            logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(bets_list)}")
-        except OSError as e:
-            logging.error(f"action: apuesta_recibida | result: fail | cantidad: {len(bets_list)}")
-        finally:
-            protocol.send_ack_message()
-            protocol.close()
+        keep_running = True
+        while keep_running:
+            try:
+                msg, is_eof = protocol.receive_bet_message()
+                addr = client_sock.getpeername()
+                """logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')"""
+                bets_list = protocol.parse_message_to_bet(msg)
+                utils.store_bets(bets_list)
+                logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(bets_list)}")
+                protocol.send_ack_message()
+                if is_eof:
+                    logging.info(f"action: eof_received | result: success | ip: {addr[0]}")
+                    keep_running = False
+            except OSError as e:
+                logging.error(f"action: apuesta_recibida | result: fail | cantidad: {len(bets_list)}")
+        protocol.close()
             
 
 

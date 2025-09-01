@@ -11,13 +11,18 @@ type Protocol struct {
     conn net.Conn
 }
 
+const (
+    EOF_FLAG_TRUE  = 0x01
+    EOF_FLAG_FALSE = 0x00
+)
+
 func NewProtocol(conn net.Conn) *Protocol {
     return &Protocol{conn: conn}
 }
 
-func (p *Protocol) SendBetMessage(bet []ClientBet, agencyId string) error {
-    bet_msg := make([]string,0, len(bet))
-    for _, b := range bet {
+func (p *Protocol) SendBetMessage(batchResult BatchResult, agencyId string) error {
+    bet_msg := make([]string,0, len(batchResult.batch))
+    for _, b := range batchResult.batch {
         bet_msg = append(bet_msg, fmt.Sprintf("%s;%s;%s;%d;%s;%d", 
             agencyId,b.FirstName, b.LastName, b.DNI, b.Birthday, b.BetNumber))
     }
@@ -27,11 +32,16 @@ func (p *Protocol) SendBetMessage(bet []ClientBet, agencyId string) error {
     if len(message) > 65535 {
         return fmt.Errorf("message too long")
     }
-    
+
     messageSize := uint16(len(message))
-    result := make([]byte, 2+len(message))
-    binary.BigEndian.PutUint16(result[0:2], messageSize)
-    copy(result[2:], []byte(message))
+    result := make([]byte, 3+len(message))
+    if batchResult.isEOF {
+        result[0] = EOF_FLAG_TRUE
+    } else {
+        result[0] = EOF_FLAG_FALSE
+    }
+    binary.BigEndian.PutUint16(result[1:3], messageSize)
+    copy(result[3:], []byte(message))
 
     return p.SendAll(result)
 }

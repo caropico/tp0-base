@@ -83,7 +83,7 @@ func (c *Client) receiveAck() error {
 	return nil
 }
 
-func (c *Client) sendBetMessage(bets []ClientBet) error {
+func (c *Client) sendBetMessage(bets BatchResult) error {
     err := c.protocol.SendBetMessage(bets, c.config.ID)
     if err != nil {
         log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
@@ -108,7 +108,12 @@ func (c *Client) StartClientLoop(signals chan os.Signal) {
         return
     }
     defer processor.Close() 
-	for c.isRunning {
+	err = c.createClientSocket()
+    if err != nil {
+        log.Errorf("action: create_socket | result: fail | error: %v", err)
+    }
+	defer c.closeConnection()
+	for c.isRunning && processor.HasMoreBatches() {
 		select {
 			case <- signals:
 			log.Infof("action: graceful_shutdown | result: success | client_id: %v", c.config.ID)
@@ -119,25 +124,16 @@ func (c *Client) StartClientLoop(signals chan os.Signal) {
 			if err != nil {
 				if err == io.EOF {
 					c.isRunning = false
-					c.closeConnection()
 					break
 				}
 			log.Errorf("action: read_batch | result: fail | error: %v", err)
-			c.closeConnection()
 			break
 			}
-
-			err = c.createClientSocket()
-        	if err != nil {
-            	log.Errorf("action: create_socket | result: fail | error: %v", err)
-            	break
-        	}
 	
 			err = c.sendBetMessage(dataBatch)
             if err != nil {
                 log.Errorf("action: send_batch | result: fail | client_id: %v | error: %v", 
                     c.config.ID, err)
-                c.closeConnection()
                 break
             }
             
@@ -147,9 +143,8 @@ func (c *Client) StartClientLoop(signals chan os.Signal) {
                     c.config.ID, err)
             }
             
-            c.closeConnection()
 		}
 	}
-
+	time.Sleep(c.config.LoopPeriod)
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
 }

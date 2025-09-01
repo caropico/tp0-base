@@ -25,6 +25,16 @@ type CSVBatchProcessor struct {
     isEOF     bool
 }
 
+//BatchResult struct to return batch and if EOF was reached
+type BatchResult struct {
+    batch []ClientBet
+    isEOF bool
+}
+
+func (p *CSVBatchProcessor) HasMoreBatches() bool {
+    return !p.isEOF 
+}
+
 
 func createCSVProcessor(filepath string, batchSize int) (*CSVBatchProcessor, error){
 	file, err := os.Open(filepath)
@@ -45,9 +55,12 @@ func createCSVProcessor(filepath string, batchSize int) (*CSVBatchProcessor, err
 
 }
 
-func (p *CSVBatchProcessor) readNextBatch() ([]ClientBet, error) {
+func (p *CSVBatchProcessor) readNextBatch() (BatchResult, error) {
     if p.isEOF {
-        return []ClientBet{}, io.EOF
+        return BatchResult{
+            batch: []ClientBet{},
+            isEOF: true,
+        }, io.EOF
     }
     
     var batch []ClientBet
@@ -62,16 +75,29 @@ func (p *CSVBatchProcessor) readNextBatch() ([]ClientBet, error) {
             break
         }
         if err != nil {
-            return batch, fmt.Errorf("error reading CSV record: %w", err)
+            return BatchResult{
+                batch: nil,
+                isEOF: false,
+            }, fmt.Errorf("error reading CSV record: %w", err)
         }
 
         bet, err := p.parseRecord(record)
+        if err != nil { 
+            return BatchResult{
+                batch: []ClientBet{},
+                isEOF: false,
+            }, fmt.Errorf("error parsing record: %w", err)
+        }
+        
         
         batch = append(batch, bet)
         recordsRead++
     }
     
-    return batch, nil
+    return BatchResult{
+        batch: batch,
+        isEOF: p.isEOF,
+    }, nil
 }
 
 func (p *CSVBatchProcessor) parseRecord(record []string) (ClientBet, error) {
