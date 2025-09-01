@@ -8,16 +8,33 @@ import (
     "io"
 )
 
+
 const (
     MAX_BET_MESSAGE_SIZE = 65535
     LOAD_BET_MESSAGE_CODE = 0x02
     CHECK_FOR_WINNERS_MESSAGE_CODE = 0x03
     SEND_WINNERS_MESSAGE_CODE = 0x04 
+    EOF_FLAG_TRUE  = 0x01
+    EOF_FLAG_FALSE = 0x00
 )
 
-func SendBetMessage(conn net.Conn, bet []ClientBet, agencyId string) error {
-    bet_msg := make([]string,0, len(bet))
-    for _, b := range bet {
+type Protocol struct {
+    conn net.Conn
+}
+
+func NewProtocol(conn net.Conn) *Protocol {
+    return &Protocol{conn: conn}
+}
+
+func (p *Protocol) SendLoadBetCode() error {
+    result := make([]byte, 1)
+    result[0] = LOAD_BET_MESSAGE_CODE
+    return p.SendAll(result)
+}
+
+func (p *Protocol) SendBetMessage(batchResult BatchResult, agencyId string) error {
+    bet_msg := make([]string,0, len(batchResult.batch))
+    for _, b := range batchResult.batch {
         bet_msg = append(bet_msg, fmt.Sprintf("%s;%s;%s;%d;%s;%d", 
             agencyId,b.FirstName, b.LastName, b.DNI, b.Birthday, b.BetNumber))
     }
@@ -30,16 +47,20 @@ func SendBetMessage(conn net.Conn, bet []ClientBet, agencyId string) error {
     
     messageSize := uint16(len(message))
     result := make([]byte, 3+len(message))
-    result[0] = LOAD_BET_MESSAGE_CODE
+    if batchResult.isEOF {
+        result[0] = EOF_FLAG_TRUE
+    } else {
+        result[0] = EOF_FLAG_FALSE
+    }
     binary.BigEndian.PutUint16(result[1:3], messageSize)
     copy(result[3:], []byte(message))
 
-    err := SendAll(conn, result)
+    err := p.SendAll(result)
 
     return err
 }
 
-func SendCheckForWinnersMessage(conn net.Conn, agencyId string) error {
+func (p *Protocol) SendCheckForWinnersMessage(agencyId string) error {
     message := agencyId
     
     if len(message) > MAX_BET_MESSAGE_SIZE {
@@ -52,14 +73,14 @@ func SendCheckForWinnersMessage(conn net.Conn, agencyId string) error {
     binary.BigEndian.PutUint16(result[1:3], messageSize)
     copy(result[3:], []byte(message))
 
-    err := SendAll(conn, result)
+    err := p.SendAll(result)
     return err
 }
 
-func SendAll(conn net.Conn, data []byte) error {
+func (p *Protocol) SendAll(data []byte) error {
     totalWritten := 0
     for totalWritten < len(data) {
-        n, err := conn.Write(data[totalWritten:])
+        n, err := p.conn.Write(data[totalWritten:])
         if err != nil {
             return err
         }
@@ -68,11 +89,11 @@ func SendAll(conn net.Conn, data []byte) error {
     return nil
 }
 
-func ReceiveAck(conn net.Conn) (byte,error) {
+func (p *Protocol) ReceiveAck() (byte,error) {
     ack := make([]byte,1)
     totalRead := 0
     for totalRead < 1 {
-        n, err := conn.Read(ack[totalRead:])
+        n, err := p.conn.Read(ack[totalRead:])
         if err != nil {
             return 0,err
         }
@@ -82,9 +103,9 @@ func ReceiveAck(conn net.Conn) (byte,error) {
     return ack[0],nil
 }
 
-func ReceiveWinnersMessage(conn net.Conn) ([]string, error) {
+func (p *Protocol)  ReceiveWinnersMessage() ([]string, error) {
     codeBytes := make([]byte, 1)
-    _, err := io.ReadFull(conn, codeBytes)
+    _, err := io.ReadFull(p.conn, codeBytes)
     if err != nil {
         return nil, fmt.Errorf("error receiving message code: %w", err)
     }
@@ -94,7 +115,7 @@ func ReceiveWinnersMessage(conn net.Conn) ([]string, error) {
     }
     
     sizeBytes := make([]byte, 2)
-    _, err = io.ReadFull(conn, sizeBytes)
+    _, err = io.ReadFull(p.conn, sizeBytes)
     if err != nil {
         return nil, fmt.Errorf("error receiving message size: %w", err)
     }
@@ -102,7 +123,7 @@ func ReceiveWinnersMessage(conn net.Conn) ([]string, error) {
     messageSize := binary.BigEndian.Uint16(sizeBytes)
     
     messageBytes := make([]byte, messageSize)
-    _, err = io.ReadFull(conn, messageBytes)
+    _, err = io.ReadFull(p.conn, messageBytes)
     if err != nil {
         return nil, fmt.Errorf("error receiving message: %w", err)
     }
@@ -113,4 +134,8 @@ func ReceiveWinnersMessage(conn net.Conn) ([]string, error) {
     }
     
     return strings.Split(message, ";"), nil
+}
+
+func (p *Protocol) Close() error {
+    return p.conn.Close()
 }

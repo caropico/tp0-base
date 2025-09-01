@@ -34,7 +34,7 @@ type ClientBet struct {
 // Client Entity that encapsulates how
 type Client struct {
 	config ClientConfig
-	conn   net.Conn
+	protocol *Protocol
 	isRunning bool
 }
 
@@ -61,12 +61,12 @@ func (c *Client) createClientSocket() error {
 			err,
 		)
 	}
-	c.conn = conn
+	c.protocol = NewProtocol(conn)
 	return nil
 }
 
 func (c *Client) receiveAck() error {
-	ack, err := ReceiveAck(c.conn)
+	ack, err := c.protocol.ReceiveAck()
 		if err != nil {
 			log.Errorf("action: receive_ack | result: fail | client_id: %v | error: %v",
 				c.config.ID,
@@ -83,8 +83,8 @@ func (c *Client) receiveAck() error {
 	return nil
 }
 
-func (c *Client) sendBetMessage(bets []ClientBet) error {
-    err := SendBetMessage(c.conn, bets, c.config.ID)
+func (c *Client) sendBetMessage(batchResult BatchResult) error {
+    err := c.protocol.SendBetMessage(batchResult, c.config.ID)
     if err != nil {
         log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
             c.config.ID, err)
@@ -93,7 +93,7 @@ func (c *Client) sendBetMessage(bets []ClientBet) error {
 }
 
 func (c *Client) CheckForWinners() error {
-    err := SendCheckForWinnersMessage(c.conn, c.config.ID)
+    err := c.protocol.SendCheckForWinnersMessage(c.config.ID)
     if err != nil {
         log.Errorf("action: send_check_winners | result: fail | client_id: %v | error: %v",
             c.config.ID, err)
@@ -103,7 +103,7 @@ func (c *Client) CheckForWinners() error {
 }
 
 func (c *Client) ReceiveWinners() ([]string, error) {
-    msg, err := ReceiveWinnersMessage(c.conn)
+    msg, err := c.protocol.ReceiveWinnersMessage()
     if err != nil {
         log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
             c.config.ID, err)
@@ -112,78 +112,92 @@ func (c *Client) ReceiveWinners() ([]string, error) {
     return msg, nil
 }
 
-
-// StartClientLoop Send messages to the client until some time threshold is met
-func (c *Client) StartClientLoop(signals chan os.Signal) {
-	c.isRunning = true
-	processor, err := createCSVProcessor("./agency.csv", c.config.MaxAmountBatch)
-    if err != nil {
-        log.Errorf("action: create_csv_processor | result: fail | client_id: %v | error: %v", c.config.ID, err)
-        return
+func (c *Client) closeConnection() {
+    if c.protocol != nil {
+        c.protocol.Close()
     }
-    defer processor.Close() 
-	for c.isRunning && processor.HasMoreBatches() {
-		select {
-			case <- signals:
-			log.Infof("action: graceful_shutdown | result: success | client_id: %v", c.config.ID)
-			c.isRunning = false
-			return
-		default: 
-			dataBatch, err := processor.readNextBatch()
-			if err != nil {
-				if err == io.EOF {
-					c.isRunning = false
-					c.conn.Close()
-					break
-				}
-			log.Errorf("action: read_batch | result: fail | error: %v", err)
-			c.conn.Close()
-			break
-			}
+}
 
-			err = c.createClientSocket()
-        	if err != nil {
-            	log.Errorf("action: create_socket | result: fail | error: %v", err)
-            	break
-        	}
-	
-			err = c.sendBetMessage(dataBatch)
+func (c *Client) sendAllBatches(signals chan os.Signal) error {
+    processor, err := createCSVProcessor("./agency.csv", c.config.MaxAmountBatch)
+    if err != nil {
+        return err
+    }
+    defer processor.Close()
+    
+    err = c.createClientSocket()
+    if err != nil {
+        return err
+    }
+    defer c.closeConnection()
+
+	err = c.protocol.SendLoadBetCode()
+    if err != nil {
+        return err
+    }
+    
+    for c.isRunning && processor.HasMoreBatches() {
+        select {
+        case <-signals:
+            return nil
+        default:
+            batchResult, err := processor.readNextBatch()
             if err != nil {
-                log.Errorf("action: send_batch | result: fail | client_id: %v | error: %v", 
-                    c.config.ID, err)
-                c.conn.Close()
-                break
+                if err == io.EOF {
+                    break
+                }
+                return err
+            }
+            
+            err = c.sendBetMessage(batchResult)
+            if err != nil {
+                return err
             }
             
             err = c.receiveAck()
             if err != nil {
-                log.Errorf("action: receive_batch_ack | result: fail | client_id: %v | error: %v", 
-                    c.config.ID, err)
+                return err
             }
-            
-            c.conn.Close()
-		}
-	}
+        }
+    }
+    return nil
+}
 
-	if !processor.HasMoreBatches() {
-		err = c.createClientSocket()
-		if err != nil {
-			log.Errorf("action: create_socket | result: fail | error: %v", err)
-			return
-		}
+func (c *Client) checkForWinners(signals chan os.Signal) error {
+    err := c.createClientSocket()
+    if err != nil {
+        return err
+    }
+    defer c.closeConnection()
+    
+    err = c.protocol.SendCheckForWinnersMessage(c.config.ID)
+    if err != nil {
+        return err
+    }
+    
+    winners, err := c.protocol.ReceiveWinnersMessage()
+    if err != nil {
+        return err
+    }
+    
+    log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
+    return nil
+}
 
-		err := c.CheckForWinners()
-		if err != nil {
-			log.Errorf("action: create_socket | result: fail | error: %v", err)
-		}
-		winners, err := c.ReceiveWinners()
-    	if err != nil {
-        	log.Errorf("action: receive_winners | result: fail | client_id: %v | error: %v",
-            	c.config.ID, err)
-    	}
-		log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winners))
-		c.conn.Close()
-	}
+// StartClientLoop Send messages to the client until some time threshold is met
+func (c *Client) StartClientLoop(signals chan os.Signal) {
+	c.isRunning = true
+
+	err := c.sendAllBatches(signals)
+    if err != nil {
+        log.Errorf("action: send_batches | result: fail | error: %v", err)
+        return
+    }
+    
+    err = c.checkForWinners(signals)
+    if err != nil {
+        log.Errorf("action: check_winners | result: fail | error: %v", err)
+    }
 
 	time.Sleep(c.config.LoopPeriod)
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
