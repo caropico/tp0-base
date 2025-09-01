@@ -1,7 +1,7 @@
 import socket
 import logging
 
-from common import protocol
+from common.protocol import Protocol
 from common import utils
 
 
@@ -43,8 +43,9 @@ class Server:
         client socket will also be closed
         """
         bets_list = []
+        protocol = Protocol(client_sock)
         try:
-            msg = protocol.receive_bet_message(client_sock)
+            msg = protocol.receive_bet_message()
             addr = client_sock.getpeername()
             """logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')"""
             bets_list = protocol.parse_message_to_bet(msg)
@@ -53,8 +54,8 @@ class Server:
         except OSError as e:
             logging.error(f"action: apuesta_recibida | result: fail | cantidad: {len(bets_list)}")
         finally:
-            protocol.send_ack_message(client_sock)
-            client_sock.close()
+            protocol.send_ack_message()
+            protocol.close()
             
 
 

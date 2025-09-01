@@ -7,7 +7,15 @@ import (
     "strings"
 )
 
-func SendBetMessage(conn net.Conn, bet []ClientBet, agencyId string) error {
+type Protocol struct {
+    conn net.Conn
+}
+
+func NewProtocol(conn net.Conn) *Protocol {
+    return &Protocol{conn: conn}
+}
+
+func (p *Protocol) SendBetMessage(bet []ClientBet, agencyId string) error {
     bet_msg := make([]string,0, len(bet))
     for _, b := range bet {
         bet_msg = append(bet_msg, fmt.Sprintf("%s;%s;%s;%d;%s;%d", 
@@ -25,15 +33,13 @@ func SendBetMessage(conn net.Conn, bet []ClientBet, agencyId string) error {
     binary.BigEndian.PutUint16(result[0:2], messageSize)
     copy(result[2:], []byte(message))
 
-    err := SendAll(conn, result)
-
-    return err
+    return p.SendAll(result)
 }
 
-func SendAll(conn net.Conn, data []byte) error {
+func (p *Protocol) SendAll(data []byte) error {
     totalWritten := 0
     for totalWritten < len(data) {
-        n, err := conn.Write(data[totalWritten:])
+        n, err := p.conn.Write(data[totalWritten:])
         if err != nil {
             return err
         }
@@ -42,11 +48,11 @@ func SendAll(conn net.Conn, data []byte) error {
     return nil
 }
 
-func ReceiveAll(conn net.Conn) (byte,error) {
+func (p *Protocol) ReceiveAll() (byte,error) {
     ack := make([]byte,1)
     totalRead := 0
     for totalRead < 1 {
-        n, err := conn.Read(ack[totalRead:])
+        n, err := p.conn.Read(ack[totalRead:])
         if err != nil {
             return 0,err
         }
@@ -54,4 +60,8 @@ func ReceiveAll(conn net.Conn) (byte,error) {
     }
 
     return ack[0],nil
+}
+
+func (p *Protocol) Close() error {
+    return p.conn.Close()
 }

@@ -34,7 +34,7 @@ type ClientBet struct {
 // Client Entity that encapsulates how
 type Client struct {
 	config ClientConfig
-	conn   net.Conn
+	protocol *Protocol
 	isRunning bool
 }
 
@@ -61,12 +61,12 @@ func (c *Client) createClientSocket() error {
 			err,
 		)
 	}
-	c.conn = conn
+	c.protocol = NewProtocol(conn)
 	return nil
 }
 
 func (c *Client) receiveAck() error {
-	ack, err := ReceiveAll(c.conn)
+	ack, err := c.protocol.ReceiveAll()
 		if err != nil {
 			log.Errorf("action: receive_ack | result: fail | client_id: %v | error: %v",
 				c.config.ID,
@@ -84,12 +84,18 @@ func (c *Client) receiveAck() error {
 }
 
 func (c *Client) sendBetMessage(bets []ClientBet) error {
-    err := SendBetMessage(c.conn, bets, c.config.ID)
+    err := c.protocol.SendBetMessage(bets, c.config.ID)
     if err != nil {
         log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
             c.config.ID, err)
     }
     return err
+}
+
+func (c *Client) closeConnection() {
+    if c.protocol != nil {
+        c.protocol.Close()
+    }
 }
 
 
@@ -113,11 +119,11 @@ func (c *Client) StartClientLoop(signals chan os.Signal) {
 			if err != nil {
 				if err == io.EOF {
 					c.isRunning = false
-					c.conn.Close()
+					c.closeConnection()
 					break
 				}
 			log.Errorf("action: read_batch | result: fail | error: %v", err)
-			c.conn.Close()
+			c.closeConnection()
 			break
 			}
 
@@ -131,7 +137,7 @@ func (c *Client) StartClientLoop(signals chan os.Signal) {
             if err != nil {
                 log.Errorf("action: send_batch | result: fail | client_id: %v | error: %v", 
                     c.config.ID, err)
-                c.conn.Close()
+                c.closeConnection()
                 break
             }
             
@@ -141,7 +147,7 @@ func (c *Client) StartClientLoop(signals chan os.Signal) {
                     c.config.ID, err)
             }
             
-            c.conn.Close()
+            c.closeConnection()
 		}
 	}
 
