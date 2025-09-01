@@ -85,7 +85,7 @@ class Server:
             if len(self._waiting_agencies) == self._num_clients:
                 self.__do_sorteo_and_send_results()
             else:
-                logging.info(f"action: waiting_agencies | agencies_ready: {len(self._waiting_agencies)}/{self._num_clients}")
+                logging.info(f"action: waiting_agencies | result: in_progress | agencies_ready: {len(self._waiting_agencies)}/{self._num_clients}")
             
         except Exception as e:
             logging.error(f"action: handle_check_winners | result: fail | error: {e}")
