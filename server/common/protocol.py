@@ -50,7 +50,7 @@ class Protocol:
                 if not chunk:
                     raise ConnectionError("Connection closed while reading length")
                 length_bytes += chunk
-            return struct.unpack('>H', length_bytes)[0]
+            return (length_bytes[0] << 8) | length_bytes[1]
         except Exception as e:
             raise Exception(f"Error receiving length: {e}")
         
