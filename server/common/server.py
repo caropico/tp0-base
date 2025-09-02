@@ -21,6 +21,9 @@ class Server:
         self._waiting_agencies_lock = threading.Lock()
         self._bets_storage_lock = threading.Lock()        
         self._barrier = threading.Barrier(self._num_clients, action=self.__do_sorteo_and_send_results)
+        self._shutdown_event = threading.Event()
+        self._active_threads = []
+        self._threads_lock = threading.Lock()
 
     def run(self):
         """
@@ -35,19 +38,33 @@ class Server:
         # the server
         self._is_running = True
         try: 
-            while self._is_running:
+            while self._is_running and not self._shutdown_event.is_set():
                 client_sock = self.__accept_new_connection()
                 if client_sock:
                     client_thread = threading.Thread(
-                        target=self.__handle_client_connection,
+                        target=self._handle_client,
                         args=(client_sock,)
                     )
-                    client_thread.daemon = True
+                    client_thread.daemon = False
+                with self._threads_lock:
+                        self._active_threads.append(client_thread)
             
                 client_thread.start()
                 logging.info(f'action: thread_started | result: success | thread_id: {client_thread.ident} | is_alive: {client_thread.is_alive()}')
         except OSError:
             logging.info('action: server_loop_interrupted | result: success')
+        finally:
+            self._wait_for_threads()
+            
+    def _handle_client(self, client_sock):
+        """Handle client connection and ensure thread cleanup"""
+        try:
+            self.__handle_client_connection(client_sock)
+        finally:
+            with self._threads_lock:
+                current_thread = threading.current_thread()
+                if current_thread in self._active_threads:
+                    self._active_threads.remove(current_thread)
             
 
     def __handle_client_connection(self, client_sock):
@@ -71,7 +88,7 @@ class Server:
     def __handle_bets_loads(self, protocol):
         """Maneja múltiples batches hasta recibir EOF"""
         keep_running = True
-        while keep_running:
+        while keep_running and not self._shutdown_event.is_set():
             try:
                 msg, is_eof = protocol.receive_bet_message()
                 bets_list = protocol.parse_message_to_bet(msg)
@@ -89,13 +106,20 @@ class Server:
             
     def __handle_check_for_winners(self, protocol):
         try:
+            if self._shutdown_event.is_set(): 
+                return
             msg = protocol.receive_check_winners()
             agency_id = msg.strip()
             with self._waiting_agencies_lock:       
                 self._waiting_agencies[agency_id] = protocol 
                 if len(self._waiting_agencies) == self._num_clients:
                     self.__do_sorteo_and_send_results()
-            self._barrier.wait()
+            try:
+                self._barrier.wait(timeout=30.0)
+            except threading.BrokenBarrierError:
+                logging.error("action: barrier_broken | result: shutdown_in_progress")
+            except Exception as e:
+                logging.error(f"action: barrier_wait | result: fail | error: {e}")
         except Exception as e:
             logging.error(f"action: handle_check_winners | result: fail | error: {e}")
             protocol.close()
@@ -121,6 +145,28 @@ class Server:
             
         self._waiting_agencies.clear()
         
+        
+    def _wait_for_threads(self):
+        """Wait for all active threads to finish"""
+        logging.info("action: waiting_for_threads | result: in_progress")
+        try:
+            if self._barrier:
+                self._barrier.abort()
+        except:
+            pass
+        
+        with self._threads_lock:
+            threads_to_wait = self._active_threads.copy()
+        
+        for thread in threads_to_wait:
+            try:
+                thread.join(timeout=5.0)
+                if thread.is_alive():
+                    logging.warning(f"action: thread_join | result: timeout | thread_id: {thread.ident}")
+            except Exception as e:
+                logging.error(f"action: thread_join | result: fail | error: {e}")
+        
+        logging.info("action: threads_cleanup | result: success")
 
     def __accept_new_connection(self):
         """
@@ -138,7 +184,12 @@ class Server:
     
     
     def shutdown(self):
+        """
+        Ensure graceful server shutdown
+        """
+
         self._is_running = False
+        self._shutdown_event.set()
         if self._server_socket:
             self._server_socket.close()
         logging.info('action: close_server_socket | result: success')
