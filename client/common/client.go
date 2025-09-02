@@ -120,7 +120,7 @@ func (c *Client) StartClientLoop(signals chan os.Signal) {
 			c.isRunning = false
 			return
 		default: 
-			dataBatch, err := processor.readNextBatch()
+			dataBatch, err := processor.readNextBatch(c.config.ID)
 			if err != nil {
 				if err == io.EOF {
 					c.isRunning = false

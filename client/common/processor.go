@@ -15,6 +15,7 @@ const (
     INDEX_CSV_DNI = 2
     INDEX_CSV_BIRTHDAY = 3
     INDEX_CSV_BETNUMBER = 4
+    MAX_PACKET_SIZE = 8 * 1024 
 )
 
 //Processor that handles bets from csv file
@@ -55,7 +56,7 @@ func createCSVProcessor(filepath string, batchSize int) (*CSVBatchProcessor, err
 
 }
 
-func (p *CSVBatchProcessor) readNextBatch() (BatchResult, error) {
+func (p *CSVBatchProcessor) readNextBatch(agencyId string) (BatchResult, error) {
     if p.isEOF {
         return BatchResult{
             batch: []ClientBet{},
@@ -65,13 +66,12 @@ func (p *CSVBatchProcessor) readNextBatch() (BatchResult, error) {
     
     var batch []ClientBet
     recordsRead := 0
+    estimatedSize := 3
     
     for recordsRead < p.batchSize {
         record, err := p.reader.Read()
         if err == io.EOF {
             p.isEOF = true
-            log.Infof("action: reached_end_of_file | result: success | final_batch_size: %d", 
-                len(batch))
             break
         }
         if err != nil {
@@ -88,9 +88,18 @@ func (p *CSVBatchProcessor) readNextBatch() (BatchResult, error) {
                 isEOF: false,
             }, fmt.Errorf("error parsing record: %w", err)
         }
+
+        betSize := len(fmt.Sprintf("%s;%s;%s;%d;%s;%d\n", agencyId,
+            bet.FirstName, bet.LastName, bet.DNI, bet.Birthday, bet.BetNumber))
+        
+        if estimatedSize + betSize > MAX_PACKET_SIZE {
+            log.Infof("action: batch_size_limited | result: success | reason: 8kb_limit | final_size: %d", len(batch))
+            break
+        }
         
         
         batch = append(batch, bet)
+        estimatedSize += betSize
         recordsRead++
     }
     
