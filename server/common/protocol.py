@@ -80,7 +80,7 @@ class Protocol:
                 if not chunk:
                     raise ConnectionError("Connection closed while reading length")
                 length_bytes += chunk
-            return struct.unpack('>H', length_bytes)[0]
+            return (length_bytes[0] << 8) | length_bytes[1]
         except Exception as e:
             raise Exception(f"Error receiving length: {e}")
         
@@ -156,7 +156,8 @@ class Protocol:
             
             result = bytearray(3 + message_size)
             result[0] = SEND_WINNERS_MESSAGE_CODE
-            struct.pack_into('>H', result, 1, message_size)
+            result[1] = (message_size >> 8) & 0xFF 
+            result[2] = message_size & 0xFF 
             result[3:] = message_bytes
             
             total_sent = 0
