@@ -92,7 +92,8 @@ class Server:
             try:
                 msg, is_eof = protocol.receive_bet_message()
                 bets_list = protocol.parse_message_to_bet(msg)
-                utils.store_bets(bets_list)
+                with self._bets_storage_lock:
+                    utils.store_bets(bets_list)
                 logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(bets_list)}")
                 protocol.send_ack_message()
                 
