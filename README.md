@@ -75,38 +75,104 @@ client1 exited with code 0
 ## Parte 1: Introducción a Docker
 En esta primera parte del trabajo práctico se plantean una serie de ejercicios que sirven para introducir las herramientas básicas de Docker que se utilizarán a lo largo de la materia. El entendimiento de las mismas será crucial para el desarrollo de los próximos TPs.
 
-### Ejercicio N°1:
-Definir un script de bash `generar-compose.sh` que permita crear una definición de Docker Compose con una cantidad configurable de clientes.  El nombre de los containers deberá seguir el formato propuesto: client1, client2, client3, etc. 
+### Ejercicio N.º 1:
 
-El script deberá ubicarse en la raíz del proyecto y recibirá por parámetro el nombre del archivo de salida y la cantidad de clientes esperados:
+#### Solución
+Se creó el script generar-compose.sh, que permite crear automáticamente un archivo docker-compose.yaml con un servidor y una cantidad configurable de clientes (client1, client2, etc.). Al ejecutarlo, se llama a mi-generador.py, que construye el contenido del Docker Compose y lo guarda en el archivo indicado.
 
-`./generar-compose.sh docker-compose-dev.yaml 5`
-
-Considerar que en el contenido del script pueden invocar un subscript de Go o Python:
+Se puede utilizar el generador de la siguiente manera:
 
 ```
-#!/bin/bash
-echo "Nombre del archivo de salida: $1"
-echo "Cantidad de clientes: $2"
-python3 mi-generador.py $1 $2
+./generar-compose.sh <output_file> <n_clients>
 ```
 
-En el archivo de Docker Compose de salida se pueden definir volúmenes, variables de entorno y redes con libertad, pero recordar actualizar este script cuando se modifiquen tales definiciones en los sucesivos ejercicios.
+Para validar la correcta ejecución del script se puede ejecutar:
+
+```
+cat <output_file>
+```
 
 ### Ejercicio N°2:
-Modificar el cliente y el servidor para lograr que realizar cambios en el archivo de configuración no requiera reconstruír las imágenes de Docker para que los mismos sean efectivos. La configuración a través del archivo correspondiente (`config.ini` y `config.yaml`, dependiendo de la aplicación) debe ser inyectada en el container y persistida por fuera de la imagen (hint: `docker volumes`).
 
+#### Solución
+Se modificó la definición de docker-compose.yaml dentro de mi-generador.py y el Dockerfile del cliente para que los archivos de configuración no queden dentro de la imagen, sino que se inyecten como volúmenes al momento de levantar los contenedores.
+
+De esta forma, al ejecutar el script generador, cualquier cambio en config.ini (servidor) o config.yaml (clientes) se aplica de inmediato sin necesidad de reconstruir la imagen.
+
+Ejemplo de modificación del servicio server:
+```
+volumes:
+  - ./server/config.ini:/config.ini
+```
+
+Para validar la correcta implementación se puede ejecutar el script:
+```
+./generar-compose.sh docker-compose-dev.yaml 1
+```
+Levantar los contenedores:
+```
+make docker-compose-up
+```
+Modificar la configuración ./server/config.ini o ./client/config.yaml
+
+Verificar dentro del contenedor:
+```
+docker exec -it server cat /config.ini
+```
 
 ### Ejercicio N°3:
-Crear un script de bash `validar-echo-server.sh` que permita verificar el correcto funcionamiento del servidor utilizando el comando `netcat` para interactuar con el mismo. Dado que el servidor es un echo server, se debe enviar un mensaje al servidor y esperar recibir el mismo mensaje enviado.
 
-En caso de que la validación sea exitosa imprimir: `action: test_echo_server | result: success`, de lo contrario imprimir:`action: test_echo_server | result: fail`.
+#### Solución
+Se creó el script en bash validar-echo-server.sh para comprobar automáticamente que el servidor funciona como un echo server.
 
-El script deberá ubicarse en la raíz del proyecto. Netcat no debe ser instalado en la máquina _host_ y no se pueden exponer puertos del servidor para realizar la comunicación (hint: `docker network`). `
+El script levanta un contenedor temporal con alpine y netcat dentro de la misma red de Docker que el servidor (tp0_testing_net) y ejecuta el siguiente comando:
+```
+"echo '$mensaje' | nc server 12345"
+```
 
+Para validar el correcto funcionamiento ejecutar:
+```
+./generar-compose.sh docker-compose-dev.yaml 1
+```
+```
+make docker-compose-up
+```
+```
+./validar-echo-server.sh
+```
 
 ### Ejercicio N°4:
-Modificar servidor y cliente para que ambos sistemas terminen de forma _graceful_ al recibir la signal SIGTERM. Terminar la aplicación de forma _graceful_ implica que todos los _file descriptors_ (entre los que se encuentran archivos, sockets, threads y procesos) deben cerrarse correctamente antes que el thread de la aplicación principal muera. Loguear mensajes en el cierre de cada recurso (hint: Verificar que hace el flag `-t` utilizado en el comando `docker compose down`).
+
+#### Solución
+Se modificaron el **cliente y el servidor** para que terminen de forma _graceful_ al recibir la señal `SIGTERM`. Esto implica que todos los recursos abiertos por la aplicación se cierren correctamente antes de que el proceso principal termine.
+
+- **Servidor (Python)**:  
+  - Se utiliza el módulo `signal` para capturar señales del sistema.  
+  - Se define un manejador de señal (`signal_handler`) que se ejecuta al recibir `SIGTERM`.
+  - Dentro del manejador:
+    - Se llama a `server.shutdown()` para detener el loop de aceptación de conexiones.  
+    - Se cierra el socket principal (`server._server_socket`).
+
+- **Cliente (Go)**:  
+  - Se usan los paquetes `os/signal` y `syscall` para capturar `SIGTERM`.
+  - Se crea un canal de señales (signals) y se registra para recibir `syscall.SIGTERM`.
+  - En cada iteración del loop de envío de mensajes, se verifica si llegó una señal:
+    - Si hay señal, se sale del loop
+
+Para validar el correcto funcionamiento ejecutar:
+```
+./generar-compose.sh docker-compose-dev.yaml 5
+```
+```
+make docker-compose-up
+```
+```
+docker compose -f docker-compose-dev.yaml stop -t 10
+```
+```
+make docker-compose-logs
+```
+
 
 ## Parte 2: Repaso de Comunicaciones
 
@@ -115,66 +181,100 @@ Las secciones de repaso del trabajo práctico plantean un caso de uso denominado
 ### Ejercicio N°5:
 Modificar la lógica de negocio tanto de los clientes como del servidor para nuestro nuevo caso de uso.
 
-#### Cliente
-Emulará a una _agencia de quiniela_ que participa del proyecto. Existen 5 agencias. Deberán recibir como variables de entorno los campos que representan la apuesta de una persona: nombre, apellido, DNI, nacimiento, numero apostado (en adelante 'número'). Ej.: `NOMBRE=Santiago Lionel`, `APELLIDO=Lorca`, `DOCUMENTO=30904465`, `NACIMIENTO=1999-03-17` y `NUMERO=7574` respectivamente.
+#### Solución
+Cada cliente recibe sus datos de apuesta (NOMBRE, APELLIDO, DOCUMENTO, NACIMIENTO, NUMERO) como variables de entorno inyectadas por Docker Compose.
+El cliente construye un ClientBet con esos valores y lo serializa usando el protocolo.
 
-Los campos deben enviarse al servidor para dejar registro de la apuesta. Al recibir la confirmación del servidor se debe imprimir por log: `action: apuesta_enviada | result: success | dni: ${DNI} | numero: ${NUMERO}`.
+Luego, se implementó un protocolo de comunicación entre el cliente-servidor de la siguiente manera:
+  - El cliente envia un mensaje con el siguiente formato. 2 bytes en big endian para el largo del mensaje que se enviara, y luego el mensaje, donde cada valor se encuentra delimitado por `;`.
+```
+<(2 bytes) largo del mensaje><(N bytes) agencyId;bet.FirstName;bet.LastName;bet.DNI;bet.Birthday; bet.BetNumber>
+```
 
+  - El servidor primero lee los bytes del largo del mensaje, y luego procede a leer el mensaje
+  - Una vez que finalizo, responde un ACK de un byte para avisarle al cliente que la lectura fue correcta.
+  - Una vez recibido el ACK por parte del cliente, se cierra la conexion.
 
+Para evitar problemas de `short read` y `short write` se implementaron bucles de lectura y escritura en el protocolo:
+  - Envío (cliente): se asegura que, si una operación de escritura no transmite todos los bytes, el proceso continúa hasta enviar el mensaje completo.
 
-#### Servidor
-Emulará a la _central de Lotería Nacional_. Deberá recibir los campos de la cada apuesta desde los clientes y almacenar la información mediante la función `store_bet(...)` para control futuro de ganadores. La función `store_bet(...)` es provista por la cátedra y no podrá ser modificada por el alumno.
-Al persistir se debe imprimir por log: `action: apuesta_almacenada | result: success | dni: ${DNI} | numero: ${NUMERO}`.
-
-#### Comunicación:
-Se deberá implementar un módulo de comunicación entre el cliente y el servidor donde se maneje el envío y la recepción de los paquetes, el cual se espera que contemple:
-* Definición de un protocolo para el envío de los mensajes.
-* Serialización de los datos.
-* Correcta separación de responsabilidades entre modelo de dominio y capa de comunicación.
-* Correcto empleo de sockets, incluyendo manejo de errores y evitando los fenómenos conocidos como [_short read y short write_](https://cs61.seas.harvard.edu/site/2018/FileDescriptors/).
-
+  - Recepción (servidor y cliente): se lee repetidamente hasta obtener:
+    - Los 2 bytes iniciales que indican la longitud del mensaje.
+    - Todos los bytes del mensaje según esa longitud.
+    - El byte ACK de respuesta del servidor.
 
 ### Ejercicio N°6:
-Modificar los clientes para que envíen varias apuestas a la vez (modalidad conocida como procesamiento por _chunks_ o _batchs_). 
-Los _batchs_ permiten que el cliente registre varias apuestas en una misma consulta, acortando tiempos de transmisión y procesamiento.
 
-La información de cada agencia será simulada por la ingesta de su archivo numerado correspondiente, provisto por la cátedra dentro de `.data/datasets.zip`.
-Los archivos deberán ser inyectados en los containers correspondientes y persistido por fuera de la imagen (hint: `docker volumes`), manteniendo la convencion de que el cliente N utilizara el archivo de apuestas `.data/agency-{N}.csv` .
+#### Solución
+Se modificó la lógica de clientes y servidor para soportar el envío de apuestas en batchs (chunks de datos).
 
-En el servidor, si todas las apuestas del *batch* fueron procesadas correctamente, imprimir por log: `action: apuesta_recibida | result: success | cantidad: ${CANTIDAD_DE_APUESTAS}`. En caso de detectar un error con alguna de las apuestas, debe responder con un código de error a elección e imprimir: `action: apuesta_recibida | result: fail | cantidad: ${CANTIDAD_DE_APUESTAS}`.
+- Cliente
+  - Cada cliente lee sus apuestas desde el archivo `agency-{N}.csv`, inyectado en el contenedor como volumen.
+  - El procesamiento se realiza mediante un `CSVBatchProcessor`, que construye lotes de apuestas respetando dos restricciones:
+    - Cantidad máxima de apuestas por batch, configurable en `config.yaml` bajo la clave `batch.maxAmount`.
+    - Tamaño máximo del paquete de 8 KB, evitando que el mensaje supere este límite.
+  - Cada batch se serializa y se envía al servidor. El protocolo se amplió para indicar si el batch enviado es el último:
+    - 1 byte para el flag EOF (indica si es el último batch).
+    - 2 bytes en big endian con la longitud del mensaje.
+    - N bytes con las apuestas, delimitadas por saltos de línea `(\n)`.
 
-La cantidad máxima de apuestas dentro de cada _batch_ debe ser configurable desde config.yaml. Respetar la clave `batch: maxAmount`, pero modificar el valor por defecto de modo tal que los paquetes no excedan los 8kB. 
-
-Por su parte, el servidor deberá responder con éxito solamente si todas las apuestas del _batch_ fueron procesadas correctamente.
+- Servidor
+  - Recibe mensajes de tamaño variable, parsea todas las apuestas contenidas en el batch y las almacena con store_bets.
+  - Al recibir un batch con EOF flag, finaliza la comunicación con el cliente.
 
 ### Ejercicio N°7:
 
-Modificar los clientes para que notifiquen al servidor al finalizar con el envío de todas las apuestas y así proceder con el sorteo.
-Inmediatamente después de la notificacion, los clientes consultarán la lista de ganadores del sorteo correspondientes a su agencia.
-Una vez el cliente obtenga los resultados, deberá imprimir por log: `action: consulta_ganadores | result: success | cant_ganadores: ${CANT}`.
+#### Solución
+Se modificó el protocolo y la lógica de comunicación de la siguiente forma
 
-El servidor deberá esperar la notificación de las 5 agencias para considerar que se realizó el sorteo e imprimir por log: `action: sorteo | result: success`.
-Luego de este evento, podrá verificar cada apuesta con las funciones `load_bets(...)` y `has_won(...)` y retornar los DNI de los ganadores de la agencia en cuestión. Antes del sorteo no se podrán responder consultas por la lista de ganadores con información parcial.
+- Cliente
+  - Cada cliente lee sus apuestas desde el archivo `agency.csv` mediante `CSVBatchProcessor`, que arma lotes (BatchResult) de tamaño máximo configurable en `config.yaml`.
+  - Al iniciar la conexión, el cliente envía un código de carga de apuestas `(0x02)`. Posteriormente, envía todos los batches con el siguiente formato:
+```
+<(1 byte) EOF flag><(2 bytes) length><(N bytes) apuestas>
+```
+  - Por cada batch, el servidor responde con un ACK `(0x01)`
+  - Una vez finalizado el envío de apuestas, el cliente inicia una nueva conexión para notificar con el código check winners `(0x03)` y enviar su `agencyId`.
+  - Tras el sorteo, recibe un mensaje con el código send winners `(0x04)` y la lista de DNIs de ganadores correspondientes a su agencia.
 
-Las funciones `load_bets(...)` y `has_won(...)` son provistas por la cátedra y no podrán ser modificadas por el alumno.
+- Servidor
+  - Carga de apuestas `(0x02)`: recibe múltiples batches hasta el EOF flag, donde parsea cada apuesta con `parse_message_to_bet`, y almacena usando `store_bets(...)`. Por cada batch responde con ACK `(0x01)` y cierra la conexión con el cliente.
+  - Consulta de ganadores `(0x03)`: guarda la conexión asociada al `agencyId`.
+  - Cuando se reciben consultas de todas las agencias, ejecuta el sorteo:
+    - Se cargan todas las apuestas con `load_bets(...)`.
+    - Se evalúan con `has_won(...)`.
+    - Se filtran los ganadores por agencia y se responde a cada cliente con su lista de DNIs usando `send_winners_message`.
+    - El formato de envío de ganadores 
 
-No es correcto realizar un broadcast de todos los ganadores hacia todas las agencias, se espera que se informen los DNIs ganadores que correspondan a cada una de ellas.
+    ```
+    <(1 byte) código de mensaje><(2 bytes) longitud><(N bytes) DNIs ganadores>
+    ```
+    Donde los DNIs de los ganadores se encuentran delimitador por `;`. En caso de que no haya ganadores se envía `NO WINNERS`.
 
 ## Parte 3: Repaso de Concurrencia
 En este ejercicio es importante considerar los mecanismos de sincronización a utilizar para el correcto funcionamiento de la persistencia.
 
 ### Ejercicio N°8:
 
-Modificar el servidor para que permita aceptar conexiones y procesar mensajes en paralelo. En caso de que el alumno implemente el servidor en Python utilizando _multithreading_,  deberán tenerse en cuenta las [limitaciones propias del lenguaje](https://wiki.python.org/moin/GlobalInterpreterLock).
+#### Solución
+Se modificó el servidor de la siguiente forma para el manejo de la concurrencia:
 
-## Condiciones de Entrega
-Se espera que los alumnos realicen un _fork_ del presente repositorio para el desarrollo de los ejercicios y que aprovechen el esqueleto provisto tanto (o tan poco) como consideren necesario.
+El servidor utiliza hilos `(threading.Thread)` para manejar múltiples clientes en paralelo.
+  - Por cada conexión aceptada, se lanza un hilo que ejecuta `_handle_client`.
+  - Se mantiene una lista de threads activos `(_active_threads)` protegida con `_threads_lock(threading.Lock)` para asegurar el manejo correcto de concurrencia.
+  - Cada hilo procesa de manera independiente el envío de apuestas o la consulta de ganadores.
 
-Cada ejercicio deberá resolverse en una rama independiente con nombres siguiendo el formato `ej${Nro de ejercicio}`. Se permite agregar commits en cualquier órden, así como crear una rama a partir de otra, pero al momento de la entrega deberán existir 8 ramas llamadas: ej1, ej2, ..., ej7, ej8.
- (hint: verificar listado de ramas y últimos commits con `git ls-remote`)
+Para evitar condiciones de carrera se emplean locks `(threading.Lock)`:
+  - `_waiting_agencies_lock`: protege el acceso al diccionario `_waiting_agencies`, donde se guardan las agencias que notificaron su intención de participar del sorteo.
+  - `_bets_storage_lock`: pensado para proteger operaciones de almacenamiento de apuestas.
 
-Se espera que se redacte una sección del README en donde se indique cómo ejecutar cada ejercicio y se detallen los aspectos más importantes de la solución provista, como ser el protocolo de comunicación implementado (Parte 2) y los mecanismos de sincronización utilizados (Parte 3).
+Se utiliza una barrera `(threading.Barrier)` inicializada con el número total de clientes.
+  - Cada cliente que consulta ganadores se bloquea en la barrera hasta que todas las agencias lleguen.
+  - Cuando la última agencia se registra, se dispara la acción `__do_sorteo_and_send_results`, que realiza el sorteo y envía resultados.
 
-Se proveen [pruebas automáticas](https://github.com/7574-sistemas-distribuidos/tp0-tests) de caja negra. Se exige que la resolución de los ejercicios pase tales pruebas, o en su defecto que las discrepancias sean justificadas y discutidas con los docentes antes del día de la entrega. El incumplimiento de las pruebas es condición de desaprobación, pero su cumplimiento no es suficiente para la aprobación. Respetar las entradas de log planteadas en los ejercicios, pues son las que se chequean en cada uno de los tests.
+Se implementó un `_shutdown_event` para señalizar cuando el servidor debe detenerse.
+  - El loop principal (run) se interrumpe si `_shutdown_event` está activo.
+  - Antes de cerrar, se llama a `_wait_for_threads`:
+    - Se aborta la barrera (para desbloquear hilos que esperaban).
+    - Se realiza join con timeout a todos los hilos activos.
 
-La corrección personal tendrá en cuenta la calidad del código entregado y casos de error posibles, se manifiesten o no durante la ejecución del trabajo práctico. Se pide a los alumnos leer atentamente y **tener en cuenta** los criterios de corrección informados  [en el campus](https://campusgrado.fi.uba.ar/mod/page/view.php?id=73393).
