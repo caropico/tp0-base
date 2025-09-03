@@ -278,3 +278,4 @@ Se implementó un `_shutdown_event` para señalizar cuando el servidor debe dete
     - Se aborta la barrera (para desbloquear hilos que esperaban).
     - Se realiza join con timeout a todos los hilos activos.
 
+Se decidió utilizar multithreading debido a que las tareas del servidor son principalmente I/O. Usar procesos separados implicaría un overhead adicional de memoria y comunicación inter-procesos, innecesarios para este caso donde la carga de CPU es mínima. A su vez, los hilos son más livianos y nos permiten un graceful shutdown más simple.
