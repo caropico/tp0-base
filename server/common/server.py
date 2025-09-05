@@ -113,8 +113,6 @@ class Server:
             agency_id = msg.strip()
             with self._waiting_agencies_lock:       
                 self._waiting_agencies[agency_id] = protocol 
-                if len(self._waiting_agencies) == self._num_clients:
-                    self.__do_sorteo_and_send_results()
             try:
                 self._barrier.wait(timeout=30.0)
             except threading.BrokenBarrierError:
