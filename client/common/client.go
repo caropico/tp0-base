@@ -141,7 +141,7 @@ func (c *Client) sendAllBatches(signals chan os.Signal) error {
         case <-signals:
             return nil
         default:
-            batchResult, err := processor.readNextBatch()
+            dataBatch, err := processor.readNextBatch(c.config.ID)
             if err != nil {
                 if err == io.EOF {
                     break
@@ -149,7 +149,7 @@ func (c *Client) sendAllBatches(signals chan os.Signal) error {
                 return err
             }
             
-            err = c.sendBetMessage(batchResult)
+            err = c.sendBetMessage(dataBatch)
             if err != nil {
                 return err
             }

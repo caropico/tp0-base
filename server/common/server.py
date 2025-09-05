@@ -112,7 +112,8 @@ class Server:
             msg = protocol.receive_check_winners()
             agency_id = msg.strip()
             with self._waiting_agencies_lock:       
-                self._waiting_agencies[agency_id] = protocol 
+                self._waiting_agencies[agency_id] = protocol
+                logging.info(f"action: agency_waiting | result: success | agency_id: {agency_id} | waiting_agencies: {len(self._waiting_agencies)}")
             try:
                 self._barrier.wait(timeout=30.0)
             except threading.BrokenBarrierError:
